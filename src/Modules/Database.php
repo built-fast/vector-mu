@@ -12,7 +12,7 @@ final class Database implements ModuleInterface {
 
 	public function register(): void {
 		if ( class_exists( WP_CLI::class ) ) {
-			WP_CLI::add_command( 'vector db', [ $this, 'summaryCommand' ] );
+			WP_CLI::add_command( 'vector db summary', [ $this, 'summaryCommand' ] );
 			WP_CLI::add_command( 'vector db tables', [ $this, 'tablesCommand' ] );
 			WP_CLI::add_command( 'vector db revisions', [ $this, 'revisionsCommand' ] );
 			WP_CLI::add_command( 'vector db transients', [ $this, 'transientsCommand' ] );
@@ -32,8 +32,8 @@ final class Database implements ModuleInterface {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp vector db
-	 *     wp vector db --format=json
+	 *     wp vector db summary
+	 *     wp vector db summary --format=json
 	 *
 	 * @param list<string>         $args
 	 * @param array<string, mixed> $assoc_args

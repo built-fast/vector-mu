@@ -74,9 +74,10 @@ final class Health implements ModuleInterface {
 		}
 
 		// Autoload size.
+		// WordPress 6.1+ uses 'on'/'off'/'auto'/'auto-on'/'auto-off', older uses 'yes'/'no'.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$autoload_size = (int) $wpdb->get_var(
-			"SELECT SUM(LENGTH(option_value)) FROM {$wpdb->options} WHERE autoload = 'yes'"
+			"SELECT SUM(LENGTH(option_value)) FROM {$wpdb->options} WHERE autoload IN ('yes', 'on', 'auto-on')"
 		);
 
 		// Uploads size.

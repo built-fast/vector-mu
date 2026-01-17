@@ -12,7 +12,6 @@ final class Cron implements ModuleInterface {
 
 	public function register(): void {
 		if ( class_exists( WP_CLI::class ) ) {
-			WP_CLI::add_command( 'vector cron', [ $this, 'listCommand' ] );
 			WP_CLI::add_command( 'vector cron list', [ $this, 'listCommand' ] );
 			WP_CLI::add_command( 'vector cron status', [ $this, 'statusCommand' ] );
 		}
@@ -39,10 +38,10 @@ final class Cron implements ModuleInterface {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp vector cron
-	 *     wp vector cron --overdue
-	 *     wp vector cron --hook=woocommerce
-	 *     wp vector cron --format=json
+	 *     wp vector cron list
+	 *     wp vector cron list --overdue
+	 *     wp vector cron list --hook=woocommerce
+	 *     wp vector cron list --format=json
 	 *
 	 * @param list<string>         $args
 	 * @param array<string, mixed> $assoc_args

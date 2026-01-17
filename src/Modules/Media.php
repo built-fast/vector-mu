@@ -16,7 +16,7 @@ final class Media implements ModuleInterface {
 
 	public function register(): void {
 		if ( class_exists( WP_CLI::class ) ) {
-			WP_CLI::add_command( 'vector media', [ $this, 'summaryCommand' ] );
+			WP_CLI::add_command( 'vector media summary', [ $this, 'summaryCommand' ] );
 			WP_CLI::add_command( 'vector media orphaned', [ $this, 'orphanedCommand' ] );
 			WP_CLI::add_command( 'vector media missing', [ $this, 'missingCommand' ] );
 			WP_CLI::add_command( 'vector media duplicates', [ $this, 'duplicatesCommand' ] );
@@ -35,8 +35,8 @@ final class Media implements ModuleInterface {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp vector media
-	 *     wp vector media --format=json
+	 *     wp vector media summary
+	 *     wp vector media summary --format=json
 	 *
 	 * @param list<string>         $args
 	 * @param array<string, mixed> $assoc_args

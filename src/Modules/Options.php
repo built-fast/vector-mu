@@ -51,7 +51,7 @@ final class Options implements ModuleInterface {
 			$wpdb->prepare(
 				"SELECT option_name, LENGTH(option_value) as size_bytes
 				FROM {$wpdb->options}
-				WHERE autoload = 'yes'
+				WHERE autoload IN ('yes', 'on', 'auto-on')
 				ORDER BY size_bytes DESC
 				LIMIT %d",
 				$limit
@@ -66,12 +66,12 @@ final class Options implements ModuleInterface {
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$total_size = (int) $wpdb->get_var(
-			"SELECT SUM(LENGTH(option_value)) FROM {$wpdb->options} WHERE autoload = 'yes'"
+			"SELECT SUM(LENGTH(option_value)) FROM {$wpdb->options} WHERE autoload IN ('yes', 'on', 'auto-on')"
 		);
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$total_count = (int) $wpdb->get_var(
-			"SELECT COUNT(*) FROM {$wpdb->options} WHERE autoload = 'yes'"
+			"SELECT COUNT(*) FROM {$wpdb->options} WHERE autoload IN ('yes', 'on', 'auto-on')"
 		);
 
 		$items = [];
@@ -237,12 +237,13 @@ final class Options implements ModuleInterface {
 		$no_autoload_count = 0;
 
 		foreach ( $stats as $stat ) {
-			if ( 'yes' === $stat['autoload'] ) {
-				$autoload_size  = (int) $stat['total_size'];
-				$autoload_count = (int) $stat['count'];
+			// WordPress 6.1+ uses 'on'/'off'/'auto'/'auto-on'/'auto-off', older uses 'yes'/'no'.
+			if ( in_array( $stat['autoload'], [ 'yes', 'on', 'auto-on' ], true ) ) {
+				$autoload_size  += (int) $stat['total_size'];
+				$autoload_count += (int) $stat['count'];
 			} else {
-				$no_autoload_size  = (int) $stat['total_size'];
-				$no_autoload_count = (int) $stat['count'];
+				$no_autoload_size  += (int) $stat['total_size'];
+				$no_autoload_count += (int) $stat['count'];
 			}
 		}
 
