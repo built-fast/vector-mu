@@ -7,9 +7,18 @@ namespace VectorMU;
 use VectorMU\Contracts\ModuleInterface;
 use VectorMU\Modules\Blueprint;
 use VectorMU\Modules\ChangeDomain;
+use VectorMU\Modules\Cleanup;
+use VectorMU\Modules\Cron;
+use VectorMU\Modules\Database;
+use VectorMU\Modules\Environment;
+use VectorMU\Modules\Health;
+use VectorMU\Modules\Media;
+use VectorMU\Modules\Options;
 use VectorMU\Modules\PluginBlocker;
+use VectorMU\Modules\Security;
 use VectorMU\Modules\UploadsSize;
 use VectorMU\Modules\UserImpersonate;
+use VectorMU\Modules\Users;
 
 final class Plugin {
 
@@ -21,9 +30,18 @@ final class Plugin {
 	private const MODULES = [
 		Blueprint::class,
 		ChangeDomain::class,
+		Cleanup::class,
+		Cron::class,
+		Database::class,
+		Environment::class,
+		Health::class,
+		Media::class,
+		Options::class,
 		PluginBlocker::class,
+		Security::class,
 		UploadsSize::class,
 		UserImpersonate::class,
+		Users::class,
 	];
 
 	public static function boot(): void {
