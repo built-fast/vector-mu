@@ -58,7 +58,7 @@ final class ChangeDomain implements ModuleInterface {
 
 		WP_CLI::log( "Replacing '{$old_domain}' with '{$new_domain}'..." );
 		WP_CLI::log( "Pattern: {$pattern}" );
-		WP_CLI::log( "Tables: " . implode( ', ', $tables ) );
+		WP_CLI::log( 'Tables: ' . implode( ', ', $tables ) );
 
 		if ( $dry_run ) {
 			WP_CLI::log( '' );
@@ -78,9 +78,12 @@ final class ChangeDomain implements ModuleInterface {
 			$command_args[] = '--dry-run';
 		}
 
-		WP_CLI::runcommand( 'search-replace ' . implode( ' ', $command_args ), [
-			'launch' => false,
-		] );
+		WP_CLI::runcommand(
+			'search-replace ' . implode( ' ', $command_args ),
+			[
+				'launch' => false,
+			]
+		);
 	}
 
 	/**
