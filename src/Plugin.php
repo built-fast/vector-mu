@@ -19,6 +19,7 @@ use VectorMU\Modules\Security;
 use VectorMU\Modules\UploadsSize;
 use VectorMU\Modules\UserImpersonate;
 use VectorMU\Modules\Users;
+use VectorMU\Modules\VectorApi;
 
 final class Plugin {
 
@@ -42,6 +43,7 @@ final class Plugin {
 		UploadsSize::class,
 		UserImpersonate::class,
 		Users::class,
+		VectorApi::class,
 	];
 
 	public static function boot(): void {
