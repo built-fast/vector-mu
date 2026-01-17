@@ -78,15 +78,10 @@ final class Importer {
 	public function validate( string $archivePath ): Metadata {
 		$this->validator->validateArchive( $archivePath );
 
-		$extractDir = $this->createExtractDirectory();
+		// Read metadata directly from archive without extracting everything.
+		$metadataJson = $this->extractor->readFile( $archivePath, 'metadata.json' );
 
-		try {
-			$this->extractor->extract( $archivePath, $extractDir );
-
-			return $this->validator->validate( $extractDir );
-		} finally {
-			$this->cleanup( $extractDir );
-		}
+		return Metadata::fromJson( $metadataJson );
 	}
 
 	private function createExtractDirectory(): string {

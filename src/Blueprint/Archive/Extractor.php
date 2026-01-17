@@ -38,6 +38,40 @@ final class Extractor {
 	}
 
 	/**
+	 * Read a single file from the archive without extracting everything.
+	 *
+	 * @param string $archivePath The path to the .tar.gz file
+	 * @param string $filePath    The path within the archive (e.g., 'metadata.json')
+	 * @return string The file contents
+	 * @throws BlueprintException
+	 */
+	public function readFile( string $archivePath, string $filePath ): string {
+		if ( ! file_exists( $archivePath ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new BlueprintException( "Archive does not exist: {$archivePath}" );
+		}
+
+		$phar = new PharData( $archivePath );
+
+		$pharPath = "phar://{$archivePath}/{$filePath}";
+
+		if ( ! file_exists( $pharPath ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new BlueprintException( "File not found in archive: {$filePath}" );
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$contents = file_get_contents( $pharPath );
+
+		if ( false === $contents ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new BlueprintException( "Failed to read file from archive: {$filePath}" );
+		}
+
+		return $contents;
+	}
+
+	/**
 	 * Validate archive paths to prevent path traversal attacks.
 	 *
 	 * @throws BlueprintException
