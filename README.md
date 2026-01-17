@@ -77,6 +77,102 @@ wp vector uploads-size
 wp vector uploads-size --format=json
 ```
 
+### Cleanup
+
+WP-CLI commands for cleaning up database bloat.
+
+```bash
+wp vector cleanup revisions              # Delete all revisions
+wp vector cleanup revisions --keep=5     # Keep 5 revisions per post
+wp vector cleanup transients             # Delete expired transients
+wp vector cleanup trash                  # Empty trash
+wp vector cleanup orphans                # Delete orphaned postmeta
+wp vector cleanup all                    # Run all cleanup tasks
+wp vector cleanup all --dry-run          # Preview what would be deleted
+```
+
+### Cron
+
+WP-CLI commands for inspecting scheduled cron events.
+
+```bash
+wp vector cron                           # List scheduled events
+wp vector cron --overdue                 # Show only overdue events
+wp vector cron --hook=woocommerce        # Filter by hook name
+wp vector cron status                    # Show cron system status
+```
+
+### Database
+
+WP-CLI commands for database diagnostics.
+
+```bash
+wp vector db                             # Show database summary
+wp vector db tables                      # List tables with sizes
+wp vector db revisions                   # Count revisions per post
+wp vector db transients                  # Show transient stats
+wp vector db orphans                     # Find orphaned data
+```
+
+### Environment
+
+WP-CLI command for displaying environment information.
+
+```bash
+wp vector env                            # Show PHP, WordPress, database, and server info
+wp vector env --format=json
+```
+
+### Health
+
+WP-CLI command for a quick site health summary.
+
+```bash
+wp vector health                         # Show site health overview
+wp vector health --format=json
+```
+
+### Media
+
+WP-CLI commands for media library diagnostics.
+
+```bash
+wp vector media                          # Show media library summary
+wp vector media orphaned                 # Find files not in media library
+wp vector media missing                  # Find attachments with missing files
+wp vector media duplicates               # Find duplicate files
+```
+
+### Options
+
+WP-CLI commands for inspecting wp_options.
+
+```bash
+wp vector options autoload               # List autoloaded options by size
+wp vector options autoload --limit=50    # Show more options
+wp vector options search <pattern>       # Search option names/values
+wp vector options size                   # Show total options table size
+```
+
+### Security
+
+WP-CLI command for security audits.
+
+```bash
+wp vector security                       # Run security checks
+wp vector security --format=json
+```
+
+### Users
+
+WP-CLI commands for user management diagnostics.
+
+```bash
+wp vector users admins                   # List all admin users
+wp vector users inactive                 # Find inactive users
+wp vector users capabilities             # Audit user capabilities
+```
+
 ## Vector Partner Workflow
 
 Example workflow for migrating a configured WordPress site to a new Vector instance:
