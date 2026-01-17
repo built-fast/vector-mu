@@ -1,0 +1,15 @@
+/vendor/
+
+# Local config overrides
+/.envrc
+/phpstan.neon
+/phpcs.xml
+
+# IDE
+/.idea/
+/.vscode/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
