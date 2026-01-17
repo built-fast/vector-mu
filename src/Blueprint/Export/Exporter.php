@@ -63,12 +63,12 @@ final class Exporter {
 	}
 
 	private function exportContent( string $stagingDir, ExportOptions $options ): void {
-		if ( count( $options->includePlugins ) > 0 ) {
-			$this->contentExporter->exportPlugins( $stagingDir, $options->includePlugins );
+		if ( ! $options->skipPlugins ) {
+			$this->contentExporter->exportPlugins( $stagingDir );
 		}
 
-		if ( count( $options->includeThemes ) > 0 ) {
-			$this->contentExporter->exportThemes( $stagingDir, $options->includeThemes );
+		if ( ! $options->skipThemes ) {
+			$this->contentExporter->exportThemes( $stagingDir );
 		}
 
 		if ( $options->includeUploads ) {
@@ -82,8 +82,10 @@ final class Exporter {
 			dbPrefix: $options->dbPrefix,
 			hasDatabase: true,
 			hasUploads: $options->includeUploads,
-			plugins: $options->includePlugins,
-			themes: $options->includeThemes,
+			hasPlugins: ! $options->skipPlugins,
+			hasThemes: ! $options->skipThemes,
+			installedPlugins: $this->contentExporter->getInstalledPlugins(),
+			installedThemes: $this->contentExporter->getInstalledThemes(),
 		);
 
 		$metadataPath = $stagingDir . '/metadata.json';

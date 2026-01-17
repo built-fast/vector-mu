@@ -23,14 +23,21 @@ final class DatabaseExporter {
 
 		$command = $this->buildCommand( $outputPath, $excludeTables );
 
-		WP_CLI::runcommand( $command, [ 'launch' => false ] );
+		WP_CLI::runcommand(
+			$command,
+			[
+				'launch'     => false,
+				'exit_error' => true,
+				'return'     => 'all',
+			]
+		);
 	}
 
 	/**
 	 * @param list<string> $excludeTables
 	 */
 	private function buildCommand( string $outputPath, array $excludeTables ): string {
-		$args = [ 'db', 'export', $outputPath ];
+		$args = [ 'db', 'export', $outputPath, '--single-transaction', '--set-gtid-purged=OFF' ];
 
 		if ( count( $excludeTables ) > 0 ) {
 			$args[] = '--exclude_tables=' . implode( ',', $excludeTables );

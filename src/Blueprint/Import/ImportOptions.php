@@ -14,6 +14,7 @@ final class ImportOptions {
 		public readonly bool $skipContent = false,
 		public readonly bool $skipSearchReplace = false,
 		public readonly bool $dryRun = false,
+		public readonly bool $wipeContent = false,
 	) {
 	}
 }

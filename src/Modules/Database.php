@@ -103,7 +103,6 @@ final class Database implements ModuleInterface {
 
 		$data = [
 			'database' => [
-				// @phpstan-ignore constant.notFound
 				'name'   => DB_NAME,
 				'prefix' => $wpdb->prefix,
 			],
@@ -134,7 +133,6 @@ final class Database implements ModuleInterface {
 
 		WP_CLI::log( '' );
 		WP_CLI::log( WP_CLI::colorize( '%B=== Database Overview ===%n' ) );
-		// @phpstan-ignore constant.notFound
 		WP_CLI::log( sprintf( 'Database:          %s', DB_NAME ) );
 		WP_CLI::log( sprintf( 'Table Prefix:      %s', $wpdb->prefix ) );
 		WP_CLI::log( sprintf( 'Total Size:        %s', $this->formatSize( $total_size ) ) );

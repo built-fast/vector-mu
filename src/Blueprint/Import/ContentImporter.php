@@ -12,6 +12,39 @@ use VectorMU\Blueprint\Exception\BlueprintException;
 final class ContentImporter {
 
 	/**
+	 * Wipe the plugins directory.
+	 */
+	public function wipePlugins(): void {
+		$dir = $this->getWpContentDir() . '/plugins';
+
+		if ( is_dir( $dir ) ) {
+			$this->removeDirectoryContents( $dir );
+		}
+	}
+
+	/**
+	 * Wipe the themes directory.
+	 */
+	public function wipeThemes(): void {
+		$dir = $this->getWpContentDir() . '/themes';
+
+		if ( is_dir( $dir ) ) {
+			$this->removeDirectoryContents( $dir );
+		}
+	}
+
+	/**
+	 * Wipe the uploads directory.
+	 */
+	public function wipeUploads(): void {
+		$dir = $this->getWpContentDir() . '/uploads';
+
+		if ( is_dir( $dir ) ) {
+			$this->removeDirectoryContents( $dir );
+		}
+	}
+
+	/**
 	 * Import plugins from the extracted archive.
 	 *
 	 * @param string $extractedPath The path to the extracted archive
@@ -101,6 +134,27 @@ final class ContentImporter {
 				}
 
 				copy( $file->getPathname(), $targetPath );
+			}
+		}
+	}
+
+	/**
+	 * Remove all contents of a directory without removing the directory itself.
+	 */
+	private function removeDirectoryContents( string $directory ): void {
+		$iterator = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator(
+				$directory,
+				FilesystemIterator::SKIP_DOTS
+			),
+			RecursiveIteratorIterator::CHILD_FIRST
+		);
+
+		foreach ( $iterator as $file ) {
+			if ( $file->isDir() ) {
+				rmdir( $file->getPathname() );
+			} else {
+				unlink( $file->getPathname() );
 			}
 		}
 	}

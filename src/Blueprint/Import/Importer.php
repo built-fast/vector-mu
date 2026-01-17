@@ -57,7 +57,7 @@ final class Importer {
 			}
 
 			if ( ! $options->skipContent ) {
-				$this->importContent( $extractDir, $metadata );
+				$this->importContent( $extractDir, $metadata, $options->wipeContent );
 			}
 
 			$this->flushCaches();
@@ -114,16 +114,25 @@ final class Importer {
 		}
 	}
 
-	private function importContent( string $extractDir, Metadata $metadata ): void {
-		if ( count( $metadata->plugins ) > 0 ) {
+	private function importContent( string $extractDir, Metadata $metadata, bool $wipe ): void {
+		if ( $metadata->hasPlugins ) {
+			if ( $wipe ) {
+				$this->contentImporter->wipePlugins();
+			}
 			$this->contentImporter->importPlugins( $extractDir );
 		}
 
-		if ( count( $metadata->themes ) > 0 ) {
+		if ( $metadata->hasThemes ) {
+			if ( $wipe ) {
+				$this->contentImporter->wipeThemes();
+			}
 			$this->contentImporter->importThemes( $extractDir );
 		}
 
 		if ( $metadata->hasUploads ) {
+			if ( $wipe ) {
+				$this->contentImporter->wipeUploads();
+			}
 			$this->contentImporter->importUploads( $extractDir );
 		}
 	}
@@ -151,15 +160,9 @@ final class Importer {
 		WP_CLI::log( '' );
 		WP_CLI::log( 'Contents:' );
 		WP_CLI::log( '  Database: ' . ( $metadata->hasDatabase ? 'Yes' : 'No' ) );
+		WP_CLI::log( '  Plugins: ' . ( $metadata->hasPlugins ? 'Yes' : 'No' ) );
+		WP_CLI::log( '  Themes: ' . ( $metadata->hasThemes ? 'Yes' : 'No' ) );
 		WP_CLI::log( '  Uploads: ' . ( $metadata->hasUploads ? 'Yes' : 'No' ) );
-
-		if ( count( $metadata->plugins ) > 0 ) {
-			WP_CLI::log( '  Plugins: ' . implode( ', ', $metadata->plugins ) );
-		}
-
-		if ( count( $metadata->themes ) > 0 ) {
-			WP_CLI::log( '  Themes: ' . implode( ', ', $metadata->themes ) );
-		}
 	}
 
 	private function cleanup( string $directory ): void {

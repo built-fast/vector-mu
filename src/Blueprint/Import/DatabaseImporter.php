@@ -7,6 +7,8 @@ namespace VectorMU\Blueprint\Import;
 use VectorMU\Blueprint\Exception\BlueprintException;
 use WP_CLI;
 
+use function WP_CLI\Utils\run_mysql_command;
+
 final class DatabaseImporter {
 
 	private const SEARCH_REPLACE_TABLES = [
@@ -24,15 +26,27 @@ final class DatabaseImporter {
 	 * @throws BlueprintException
 	 */
 	public function import( string $sqlPath ): void {
-		if ( ! class_exists( WP_CLI::class ) ) {
-			throw new BlueprintException( 'WP-CLI is required for database import' );
-		}
-
 		if ( ! file_exists( $sqlPath ) ) {
 			throw new BlueprintException( "SQL file does not exist: {$sqlPath}" );
 		}
 
-		WP_CLI::runcommand( "db import {$sqlPath}", [ 'launch' => false ] );
+		// Use WP-CLI's mysql utility with stdin redirection instead of wp db import
+		// to work around MySQL 9.x compatibility issues with SOURCE command.
+		$result = run_mysql_command(
+			sprintf( '/usr/bin/env mysql --no-auto-rehash --database=%s < %s', escapeshellarg( DB_NAME ), escapeshellarg( $sqlPath ) ),
+			[
+				'host' => DB_HOST,
+				'user' => DB_USER,
+				'pass' => DB_PASSWORD,
+			],
+			null,
+			false,
+			false
+		);
+
+		if ( 0 !== $result[2] ) {
+			throw new BlueprintException( 'Database import failed: ' . trim( $result[1] ) );
+		}
 	}
 
 	/**

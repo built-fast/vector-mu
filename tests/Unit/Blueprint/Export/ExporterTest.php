@@ -12,8 +12,8 @@ describe( 'ExportOptions', function () {
 			dbPrefix: 'wp_',
 			includeUploads: true,
 			maxUploadSize: 104857600,
-			includePlugins: [ 'plugin-a', 'plugin-b' ],
-			includeThemes: [ 'theme-a' ],
+			skipPlugins: true,
+			skipThemes: false,
 			excludeTables: [ 'wp_sessions' ],
 		);
 
@@ -22,8 +22,8 @@ describe( 'ExportOptions', function () {
 		expect( $options->dbPrefix )->toBe( 'wp_' );
 		expect( $options->includeUploads )->toBeTrue();
 		expect( $options->maxUploadSize )->toBe( 104857600 );
-		expect( $options->includePlugins )->toBe( [ 'plugin-a', 'plugin-b' ] );
-		expect( $options->includeThemes )->toBe( [ 'theme-a' ] );
+		expect( $options->skipPlugins )->toBeTrue();
+		expect( $options->skipThemes )->toBeFalse();
 		expect( $options->excludeTables )->toBe( [ 'wp_sessions' ] );
 	} );
 
@@ -36,8 +36,8 @@ describe( 'ExportOptions', function () {
 
 		expect( $options->includeUploads )->toBeFalse();
 		expect( $options->maxUploadSize )->toBeNull();
-		expect( $options->includePlugins )->toBe( [] );
-		expect( $options->includeThemes )->toBe( [] );
+		expect( $options->skipPlugins )->toBeFalse();
+		expect( $options->skipThemes )->toBeFalse();
 		expect( $options->excludeTables )->toBe( [] );
 	} );
 } );

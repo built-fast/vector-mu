@@ -36,11 +36,11 @@ final class Blueprint implements ModuleInterface {
 	 * [--max-upload-size=<size>]
 	 * : Maximum uploads size (e.g., 100M). Fails if exceeded.
 	 *
-	 * [--include-plugins=<plugins>]
-	 * : Comma-separated list of plugin directories to include.
+	 * [--skip-plugins]
+	 * : Skip exporting the plugins directory.
 	 *
-	 * [--include-themes=<themes>]
-	 * : Comma-separated list of theme directories to include.
+	 * [--skip-themes]
+	 * : Skip exporting the themes directory.
 	 *
 	 * [--exclude-tables=<tables>]
 	 * : Comma-separated list of tables to exclude from database export.
@@ -50,7 +50,7 @@ final class Blueprint implements ModuleInterface {
 	 *     wp vector blueprint export
 	 *     wp vector blueprint export mysite.tar.gz
 	 *     wp vector blueprint export --include-uploads --max-upload-size=100M
-	 *     wp vector blueprint export --include-plugins=my-plugin,other-plugin
+	 *     wp vector blueprint export --skip-plugins --skip-themes
 	 *
 	 * @param list<string>         $args
 	 * @param array<string, mixed> $assoc_args
@@ -61,8 +61,8 @@ final class Blueprint implements ModuleInterface {
 		$outputPath     = $args[0] ?? $this->getDefaultOutputPath();
 		$includeUploads = (bool) ( $assoc_args['include-uploads'] ?? false );
 		$maxUploadSize  = $this->parseSize( $assoc_args['max-upload-size'] ?? null );
-		$includePlugins = $this->parseCommaSeparated( $assoc_args['include-plugins'] ?? '' );
-		$includeThemes  = $this->parseCommaSeparated( $assoc_args['include-themes'] ?? '' );
+		$skipPlugins    = (bool) ( $assoc_args['skip-plugins'] ?? false );
+		$skipThemes     = (bool) ( $assoc_args['skip-themes'] ?? false );
 		$excludeTables  = $this->parseCommaSeparated( $assoc_args['exclude-tables'] ?? '' );
 
 		if ( ! str_ends_with( $outputPath, '.tar.gz' ) ) {
@@ -75,8 +75,8 @@ final class Blueprint implements ModuleInterface {
 			dbPrefix: $wpdb->prefix,
 			includeUploads: $includeUploads,
 			maxUploadSize: $maxUploadSize,
-			includePlugins: $includePlugins,
-			includeThemes: $includeThemes,
+			skipPlugins: $skipPlugins,
+			skipThemes: $skipThemes,
 			excludeTables: $excludeTables,
 		);
 
@@ -112,17 +112,20 @@ final class Blueprint implements ModuleInterface {
 	 * [--skip-search-replace]
 	 * : Skip URL search-replace in the database.
 	 *
+	 * [--wipe]
+	 * : Wipe existing content (plugins, themes, uploads) before importing.
+	 *
 	 * [--dry-run]
 	 * : Preview what would be imported without making changes.
 	 *
 	 * [--force]
-	 * : Skip confirmation prompt.
+	 * : Skip confirmation prompts.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com
 	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com --dry-run
-	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com --skip-database
+	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com --wipe --force
 	 *
 	 * @param list<string>         $args
 	 * @param array<string, mixed> $assoc_args
@@ -145,11 +148,27 @@ final class Blueprint implements ModuleInterface {
 		$skipDatabase      = (bool) ( $assoc_args['skip-database'] ?? false );
 		$skipContent       = (bool) ( $assoc_args['skip-content'] ?? false );
 		$skipSearchReplace = (bool) ( $assoc_args['skip-search-replace'] ?? false );
+		$wipeContent       = (bool) ( $assoc_args['wipe'] ?? false );
 		$dryRun            = (bool) ( $assoc_args['dry-run'] ?? false );
 		$force             = (bool) ( $assoc_args['force'] ?? false );
 
+		// Prompt for confirmation in interactive mode.
 		if ( ! $dryRun && ! $force ) {
-			WP_CLI::confirm( 'This will overwrite the current database. Continue?' );
+			$warnings = [];
+
+			if ( ! $skipDatabase ) {
+				$warnings[] = 'overwrite the database';
+			}
+
+			if ( ! $skipContent && $wipeContent ) {
+				$warnings[] = 'wipe and replace wp-content (plugins, themes, uploads)';
+			} elseif ( ! $skipContent ) {
+				$warnings[] = 'merge content into wp-content';
+			}
+
+			if ( count( $warnings ) > 0 ) {
+				WP_CLI::confirm( 'This will ' . implode( ' and ', $warnings ) . '. Continue?' );
+			}
 		}
 
 		$options = new ImportOptions(
@@ -160,6 +179,7 @@ final class Blueprint implements ModuleInterface {
 			skipContent: $skipContent,
 			skipSearchReplace: $skipSearchReplace,
 			dryRun: $dryRun,
+			wipeContent: $wipeContent,
 		);
 
 		WP_CLI::log( 'Importing blueprint...' );
@@ -221,18 +241,28 @@ final class Blueprint implements ModuleInterface {
 			WP_CLI::log( '' );
 			WP_CLI::log( 'Contents:' );
 			WP_CLI::log( '  Database: ' . ( $metadata->hasDatabase ? 'Yes' : 'No' ) );
+			WP_CLI::log( '  Plugins: ' . ( $metadata->hasPlugins ? 'Yes' : 'No' ) );
+			WP_CLI::log( '  Themes: ' . ( $metadata->hasThemes ? 'Yes' : 'No' ) );
 			WP_CLI::log( '  Uploads: ' . ( $metadata->hasUploads ? 'Yes' : 'No' ) );
 
-			if ( count( $metadata->plugins ) > 0 ) {
-				WP_CLI::log( '  Plugins: ' . implode( ', ', $metadata->plugins ) );
-			} else {
-				WP_CLI::log( '  Plugins: None' );
+			if ( count( $metadata->installedPlugins ) > 0 ) {
+				WP_CLI::log( '' );
+				WP_CLI::log( 'Installed Plugins:' );
+
+				foreach ( $metadata->installedPlugins as $slug => $info ) {
+					$status = $info['active'] ? 'active' : 'inactive';
+					WP_CLI::log( "  {$slug}: {$info['version']} ({$status})" );
+				}
 			}
 
-			if ( count( $metadata->themes ) > 0 ) {
-				WP_CLI::log( '  Themes: ' . implode( ', ', $metadata->themes ) );
-			} else {
-				WP_CLI::log( '  Themes: None' );
+			if ( count( $metadata->installedThemes ) > 0 ) {
+				WP_CLI::log( '' );
+				WP_CLI::log( 'Installed Themes:' );
+
+				foreach ( $metadata->installedThemes as $slug => $info ) {
+					$status = $info['active'] ? 'active' : 'inactive';
+					WP_CLI::log( "  {$slug}: {$info['version']} ({$status})" );
+				}
 			}
 		} catch ( BlueprintException $e ) {
 			WP_CLI::error( 'Validation failed: ' . $e->getMessage() );

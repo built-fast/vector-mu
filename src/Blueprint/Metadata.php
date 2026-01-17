@@ -13,6 +13,10 @@ final class Metadata implements JsonSerializable {
 
 	public const VERSION = '1.0';
 
+	/**
+	 * @param array<string, array{version: string, active: bool}> $installedPlugins
+	 * @param array<string, array{version: string, active: bool}> $installedThemes
+	 */
 	public function __construct(
 		public readonly string $version,
 		public readonly DateTimeImmutable $createdAt,
@@ -23,24 +27,26 @@ final class Metadata implements JsonSerializable {
 		public readonly string $dbPrefix,
 		public readonly bool $hasDatabase,
 		public readonly bool $hasUploads,
-		/** @var list<string> */
-		public readonly array $plugins,
-		/** @var list<string> */
-		public readonly array $themes,
+		public readonly bool $hasPlugins,
+		public readonly bool $hasThemes,
+		public readonly array $installedPlugins,
+		public readonly array $installedThemes,
 	) {
 	}
 
 	/**
-	 * @param list<string> $plugins
-	 * @param list<string> $themes
+	 * @param array<string, array{version: string, active: bool}> $installedPlugins
+	 * @param array<string, array{version: string, active: bool}> $installedThemes
 	 */
 	public static function create(
 		string $sourceUrl,
 		string $dbPrefix,
 		bool $hasDatabase = true,
 		bool $hasUploads = false,
-		array $plugins = [],
-		array $themes = [],
+		bool $hasPlugins = true,
+		bool $hasThemes = true,
+		array $installedPlugins = [],
+		array $installedThemes = [],
 	): self {
 		return new self(
 			version: self::VERSION,
@@ -52,8 +58,10 @@ final class Metadata implements JsonSerializable {
 			dbPrefix: $dbPrefix,
 			hasDatabase: $hasDatabase,
 			hasUploads: $hasUploads,
-			plugins: $plugins,
-			themes: $themes,
+			hasPlugins: $hasPlugins,
+			hasThemes: $hasThemes,
+			installedPlugins: $installedPlugins,
+			installedThemes: $installedThemes,
 		);
 	}
 
@@ -90,10 +98,10 @@ final class Metadata implements JsonSerializable {
 			throw new BlueprintException( 'Invalid metadata: invalid created_at date format' );
 		}
 
-		/** @var list<string> $plugins */
-		$plugins = is_array( $contents['plugins'] ) ? array_values( $contents['plugins'] ) : [];
-		/** @var list<string> $themes */
-		$themes = is_array( $contents['themes'] ) ? array_values( $contents['themes'] ) : [];
+		/** @var array<string, array{version: string, active: bool}> $installedPlugins */
+		$installedPlugins = is_array( $source['installed_plugins'] ?? null ) ? $source['installed_plugins'] : [];
+		/** @var array<string, array{version: string, active: bool}> $installedThemes */
+		$installedThemes = is_array( $source['installed_themes'] ?? null ) ? $source['installed_themes'] : [];
 
 		return new self(
 			version: (string) $data['version'],
@@ -105,8 +113,10 @@ final class Metadata implements JsonSerializable {
 			dbPrefix: (string) $source['db_prefix'],
 			hasDatabase: (bool) $contents['database'],
 			hasUploads: (bool) $contents['uploads'],
-			plugins: $plugins,
-			themes: $themes,
+			hasPlugins: (bool) $contents['plugins'],
+			hasThemes: (bool) $contents['themes'],
+			installedPlugins: $installedPlugins,
+			installedThemes: $installedThemes,
 		);
 	}
 
@@ -119,16 +129,18 @@ final class Metadata implements JsonSerializable {
 			'created_at'        => $this->createdAt->format( 'Y-m-d\TH:i:sP' ),
 			'vector_mu_version' => $this->vectorMuVersion,
 			'source'            => [
-				'url'         => $this->sourceUrl,
-				'wp_version'  => $this->wpVersion,
-				'php_version' => $this->phpVersion,
-				'db_prefix'   => $this->dbPrefix,
+				'url'               => $this->sourceUrl,
+				'wp_version'        => $this->wpVersion,
+				'php_version'       => $this->phpVersion,
+				'db_prefix'         => $this->dbPrefix,
+				'installed_plugins' => $this->installedPlugins,
+				'installed_themes'  => $this->installedThemes,
 			],
 			'contents'          => [
 				'database' => $this->hasDatabase,
 				'uploads'  => $this->hasUploads,
-				'plugins'  => $this->plugins,
-				'themes'   => $this->themes,
+				'plugins'  => $this->hasPlugins,
+				'themes'   => $this->hasThemes,
 			],
 		];
 	}

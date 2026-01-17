@@ -12,54 +12,85 @@ use VectorMU\Blueprint\Exception\BlueprintException;
 final class ContentExporter {
 
 	/**
-	 * Copy plugins to the staging directory.
+	 * Get installed plugins with version and active state.
 	 *
-	 * @param string        $stagingDir The staging directory
-	 * @param list<string>  $plugins    Plugin directory names to include
-	 * @throws BlueprintException
+	 * @return array<string, array{version: string, active: bool}>
 	 */
-	public function exportPlugins( string $stagingDir, array $plugins ): void {
-		$pluginsDir = $this->getWpContentDir() . '/plugins';
-		$targetDir  = $stagingDir . '/wp-content/plugins';
-
-		foreach ( $plugins as $plugin ) {
-			$source = $pluginsDir . '/' . $plugin;
-
-			if ( ! is_dir( $source ) ) {
-				throw new BlueprintException( "Plugin directory not found: {$plugin}" );
-			}
-
-			$this->copyDirectory( $source, $targetDir . '/' . $plugin );
+	public function getInstalledPlugins(): array {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
+
+		$plugins       = get_plugins();
+		$activePlugins = (array) get_option( 'active_plugins', [] );
+		$result        = [];
+
+		foreach ( $plugins as $pluginFile => $pluginData ) {
+			$slug = str_contains( $pluginFile, '/' )
+				? dirname( $pluginFile )
+				: basename( $pluginFile, '.php' );
+
+			$result[ $slug ] = [
+				'version' => $pluginData['Version'] ?? '',
+				'active'  => in_array( $pluginFile, $activePlugins, true ),
+			];
+		}
+
+		return $result;
 	}
 
 	/**
-	 * Copy themes to the staging directory.
+	 * Get installed themes with version and active state.
 	 *
-	 * @param string        $stagingDir The staging directory
-	 * @param list<string>  $themes     Theme directory names to include
-	 * @throws BlueprintException
+	 * @return array<string, array{version: string, active: bool}>
 	 */
-	public function exportThemes( string $stagingDir, array $themes ): void {
-		$themesDir = $this->getWpContentDir() . '/themes';
-		$targetDir = $stagingDir . '/wp-content/themes';
+	public function getInstalledThemes(): array {
+		$themes      = wp_get_themes();
+		$activeTheme = get_stylesheet();
+		$result      = [];
 
-		foreach ( $themes as $theme ) {
-			$source = $themesDir . '/' . $theme;
-
-			if ( ! is_dir( $source ) ) {
-				throw new BlueprintException( "Theme directory not found: {$theme}" );
-			}
-
-			$this->copyDirectory( $source, $targetDir . '/' . $theme );
+		foreach ( $themes as $slug => $theme ) {
+			$version         = $theme->get( 'Version' );
+			$result[ $slug ] = [
+				'version' => '' !== $version ? $version : '',
+				'active'  => $slug === $activeTheme,
+			];
 		}
+
+		return $result;
+	}
+
+	/**
+	 * Copy entire plugins directory to staging.
+	 */
+	public function exportPlugins( string $stagingDir ): void {
+		$source = $this->getWpContentDir() . '/plugins';
+
+		if ( ! is_dir( $source ) ) {
+			return;
+		}
+
+		$this->copyDirectory( $source, $stagingDir . '/wp-content/plugins' );
+	}
+
+	/**
+	 * Copy entire themes directory to staging.
+	 */
+	public function exportThemes( string $stagingDir ): void {
+		$source = $this->getWpContentDir() . '/themes';
+
+		if ( ! is_dir( $source ) ) {
+			return;
+		}
+
+		$this->copyDirectory( $source, $stagingDir . '/wp-content/themes' );
 	}
 
 	/**
 	 * Copy uploads to the staging directory.
 	 *
-	 * @param string   $stagingDir    The staging directory
-	 * @param int|null $maxSize       Maximum size in bytes (null for no limit)
+	 * @param string   $stagingDir The staging directory
+	 * @param int|null $maxSize    Maximum size in bytes (null for no limit)
 	 * @throws BlueprintException
 	 */
 	public function exportUploads( string $stagingDir, ?int $maxSize = null ): void {

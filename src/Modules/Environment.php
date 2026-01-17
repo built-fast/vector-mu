@@ -131,7 +131,6 @@ final class Environment implements ModuleInterface {
 		return [
 			'server_version' => $wpdb->db_version(),
 			'client_version' => $client_version,
-			// @phpstan-ignore-next-line constant.notFound
 			'database_name'  => DB_NAME,
 			'table_prefix'   => $wpdb->prefix,
 			'charset'        => $wpdb->charset,
