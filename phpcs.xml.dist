@@ -39,6 +39,14 @@
     <config name="minimum_supported_wp_version" value="6.0"/>
     <config name="testVersion" value="8.1-"/>
 
+    <!-- Blueprint directory uses direct filesystem operations for CLI archiving -->
+    <rule ref="WordPress.WP.AlternativeFunctions">
+        <exclude-pattern>./src/Blueprint/*</exclude-pattern>
+    </rule>
+    <rule ref="WordPress.Security.EscapeOutput.ExceptionNotEscaped">
+        <exclude-pattern>./src/Blueprint/*</exclude-pattern>
+    </rule>
+
     <!-- Require use statements for classes -->
     <rule ref="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly">
         <properties>

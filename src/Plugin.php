@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Modules\Blueprint;
 use VectorMU\Modules\ChangeDomain;
 use VectorMU\Modules\PluginBlocker;
+use VectorMU\Modules\UploadsSize;
 use VectorMU\Modules\UserImpersonate;
 
 final class Plugin {
@@ -17,8 +19,10 @@ final class Plugin {
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
+		Blueprint::class,
 		ChangeDomain::class,
 		PluginBlocker::class,
+		UploadsSize::class,
 		UserImpersonate::class,
 	];
 
