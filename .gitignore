@@ -4,6 +4,10 @@
 /.envrc
 /phpstan.neon
 /phpcs.xml
+/phpunit.xml
+
+# Test cache
+/.phpunit.cache
 
 # IDE
 /.idea/

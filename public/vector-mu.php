@@ -8,6 +8,7 @@
  */
 
 declare(strict_types=1);
+use VectorMU\Plugin;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -19,4 +20,4 @@ if ( ! file_exists( $autoloader ) ) {
 
 require_once $autoloader;
 
-VectorMU\Plugin::boot();
+Plugin::boot();

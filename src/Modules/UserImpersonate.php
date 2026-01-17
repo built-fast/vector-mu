@@ -7,6 +7,14 @@ namespace VectorMU\Modules;
 use VectorMU\Contracts\ModuleInterface;
 use WP_CLI;
 use WP_User;
+use function class_exists;
+use function hash;
+use function time;
+use function is_array;
+use function is_string;
+use function is_int;
+use function hash_equals;
+use function array_values;
 
 final class UserImpersonate implements ModuleInterface {
 

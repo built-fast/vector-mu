@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace VectorMU\Modules;
 
 use VectorMU\Contracts\ModuleInterface;
+use const PHP_INT_MAX;
+use function array_values;
+use function is_array;
+use function printf;
+use function sprintf;
 
 final class PluginBlocker implements ModuleInterface {
 
@@ -16,7 +21,7 @@ final class PluginBlocker implements ModuleInterface {
 	private array $deactivated = [];
 
 	public function register(): void {
-		add_filter( 'option_active_plugins', [ $this, 'filterActivePlugins' ] );
+		add_filter( 'option_active_plugins', [ $this, 'filterActivePlugins' ], PHP_INT_MAX );
 		add_action( 'admin_notices', [ $this, 'renderAdminNotice' ] );
 	}
 
