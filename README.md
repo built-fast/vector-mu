@@ -206,6 +206,16 @@ curl -X GET "https://example.com/wp-json/vector/v1/ping" \
   -H "X-Signature: t=1234567890,v1=abc123..."
 ```
 
+Testing with `wp server`:
+
+```bash
+# Set HMAC secret (if not already configured)
+wp option update vector_hmac_secret "your-secret-key"
+
+# Test the endpoint (use ?rest_route= since wp server doesn't support rewrites)
+S="your-secret-key"; T=$(date +%s); curl -i "http://localhost:9001/?rest_route=/vector/v1/ping" -H "X-Signature: t=$T,v1=$(echo -n "$T." | openssl dgst -sha256 -hmac "$S" | awk '{print $2}')"
+```
+
 ### Making Outbound Requests
 
 WordPress modules can make authenticated requests to the Vector API using `VectorApiClient`:
