@@ -9,7 +9,7 @@
     "require-dev": {
         "brain/monkey": "^2.6",
         "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
-        "pestphp/pest": "^3.0",
+        "pestphp/pest": "^2.0",
         "php-stubs/wordpress-stubs": "^6.0",
         "php-stubs/wp-cli-stubs": "^2.0",
         "phpstan/extension-installer": "^1.0",
