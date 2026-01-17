@@ -173,6 +173,73 @@ wp vector users inactive                 # Find inactive users
 wp vector users capabilities             # Audit user capabilities
 ```
 
+### VectorApi
+
+REST API endpoints for Vector platform communication. See the [API](#api) section below for details.
+
+## API
+
+Vector MU provides REST API endpoints for authenticated communication between WordPress and the Vector platform. All API requests use HMAC signature verification.
+
+### Authentication
+
+API requests are authenticated using an `X-Signature` header with the format:
+
+```
+X-Signature: t={timestamp},v1={signature}
+```
+
+Where:
+- `timestamp` is the Unix timestamp when the request was signed
+- `signature` is `HMAC-SHA256("{timestamp}.{request_body}", hmac_secret)`
+
+The HMAC secret is stored in the `vector_hmac_secret` WordPress option, which is provisioned automatically when the site is created.
+
+### Endpoints
+
+#### GET /wp-json/vector/v1/ping
+
+Health check endpoint. Returns `"pong"` with status 200.
+
+```bash
+curl -X GET "https://example.com/wp-json/vector/v1/ping" \
+  -H "X-Signature: t=1234567890,v1=abc123..."
+```
+
+### Making Outbound Requests
+
+WordPress modules can make authenticated requests to the Vector API using `VectorApiClient`:
+
+```php
+use VectorMU\Api\VectorApiClient;
+
+$client = new VectorApiClient();
+
+// Check if HMAC secret is configured
+if ( ! $client->isConfigured() ) {
+    return;
+}
+
+// Make requests
+$response = $client->get( 'sites/123/status' );
+$response = $client->post( 'sites/123/sync', [ 'action' => 'full' ] );
+$response = $client->put( 'sites/123', [ 'name' => 'updated' ] );
+$response = $client->delete( 'sites/123/cache' );
+
+// Handle response
+if ( $response['success'] ) {
+    $data = $response['data'];
+    $statusCode = $response['status_code'];
+} else {
+    $error = $response['error'];
+}
+```
+
+The client automatically:
+- Retrieves the HMAC secret from the `vector_hmac_secret` option
+- Signs requests with the `X-Signature` header
+- Targets `https://api.builtfast.com/api/v1/vector/wordpress/*`
+
 ## Vector Partner Workflow
 
 Example workflow for migrating a configured WordPress site to a new Vector instance:
