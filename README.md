@@ -30,6 +30,15 @@ wp user impersonate <user>
 wp user impersonate admin --ttl=60
 ```
 
+### ChangeDomain
+
+WP-CLI command for changing the site domain. Handles http/https and www/non-www variants using regex search-replace.
+
+```bash
+wp change-domain old.example.com new.example.com
+wp change-domain old.example.com new.example.com --dry-run
+```
+
 ## Development
 
 **Note:** Development requires PHP 8.1 to ensure `composer.lock` stays compatible with all supported versions.

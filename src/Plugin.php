@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Modules\ChangeDomain;
 use VectorMU\Modules\PluginBlocker;
 use VectorMU\Modules\UserImpersonate;
 
@@ -16,6 +17,7 @@ final class Plugin {
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
+		ChangeDomain::class,
 		PluginBlocker::class,
 		UserImpersonate::class,
 	];
