@@ -86,7 +86,11 @@ final class Blueprint implements ModuleInterface {
 			$exporter = Exporter::create();
 			$result   = $exporter->export( $options );
 
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_readable
+			$hash = hash_file( 'sha256', $result );
+
 			WP_CLI::success( "Blueprint exported to: {$result}" );
+			WP_CLI::log( "SHA-256: {$hash}" );
 		} catch ( BlueprintException $e ) {
 			WP_CLI::error( $e->getMessage() );
 		}
@@ -102,6 +106,9 @@ final class Blueprint implements ModuleInterface {
 	 *
 	 * --target-url=<url>
 	 * : The target site URL (required)
+	 *
+	 * [--checksum=<hash>]
+	 * : SHA-256 checksum to verify archive integrity before importing.
 	 *
 	 * [--skip-database]
 	 * : Skip importing the database.
@@ -124,7 +131,7 @@ final class Blueprint implements ModuleInterface {
 	 * ## EXAMPLES
 	 *
 	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com
-	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com --dry-run
+	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com --checksum=abc123...
 	 *     wp vector blueprint import mysite.tar.gz --target-url=https://newsite.com --wipe --force
 	 *
 	 * @param list<string>         $args
@@ -145,12 +152,24 @@ final class Blueprint implements ModuleInterface {
 			WP_CLI::error( '--target-url is required.' );
 		}
 
+		$checksum          = isset( $assoc_args['checksum'] ) ? (string) $assoc_args['checksum'] : null;
 		$skipDatabase      = (bool) ( $assoc_args['skip-database'] ?? false );
 		$skipContent       = (bool) ( $assoc_args['skip-content'] ?? false );
 		$skipSearchReplace = (bool) ( $assoc_args['skip-search-replace'] ?? false );
 		$wipeContent       = (bool) ( $assoc_args['wipe'] ?? false );
 		$dryRun            = (bool) ( $assoc_args['dry-run'] ?? false );
 		$force             = (bool) ( $assoc_args['force'] ?? false );
+
+		// Verify archive exists.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_exists
+		if ( ! file_exists( $archivePath ) ) {
+			WP_CLI::error( "Archive does not exist: {$archivePath}" );
+		}
+
+		// Verify checksum if provided.
+		if ( null !== $checksum && '' !== $checksum ) {
+			$this->verifyChecksum( $archivePath, $checksum );
+		}
 
 		// Prompt for confirmation in interactive mode.
 		if ( ! $dryRun && ! $force ) {
@@ -310,5 +329,24 @@ final class Blueprint implements ModuleInterface {
 		}
 
 		return (int) $size;
+	}
+
+	private function verifyChecksum( string $archivePath, string $expectedChecksum ): void {
+		WP_CLI::log( 'Verifying archive checksum...' );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_readable
+		$actualChecksum = hash_file( 'sha256', $archivePath );
+
+		if ( false === $actualChecksum ) {
+			WP_CLI::error( 'Failed to compute archive checksum.' );
+
+			return; // Unreachable, but helps PHPStan understand control flow.
+		}
+
+		if ( ! hash_equals( strtolower( $expectedChecksum ), strtolower( $actualChecksum ) ) ) {
+			WP_CLI::error( "Checksum verification failed.\nExpected: {$expectedChecksum}\nActual:   {$actualChecksum}" );
+		}
+
+		WP_CLI::log( 'Checksum verified.' );
 	}
 }
