@@ -15,6 +15,21 @@ composer install
 ln -s /opt/vector-mu/public/vector-mu.php /path/to/wp-content/mu-plugins/vector-mu.php
 ```
 
+### Standalone WP-CLI Usage
+
+Commands can also be used without installing as an MU plugin via `--require`:
+
+```bash
+wp --require=/path/to/vector-mu/cli.php vector env
+```
+
+Or add to `wp-cli.yml` in your WordPress root:
+
+```yaml
+require:
+  - /path/to/vector-mu/cli.php
+```
+
 ## Modules
 
 ### PluginBlocker
