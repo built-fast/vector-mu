@@ -135,6 +135,9 @@ WP-CLI commands for database diagnostics.
 
 ```bash
 wp vector db                             # Show database summary
+wp vector db size                        # Show total database size
+wp vector db size --format=bytes         # Show size in bytes
+wp vector db size --format=json          # Show size as JSON
 wp vector db tables                      # List tables with sizes
 wp vector db revisions                   # Count revisions per post
 wp vector db transients                  # Show transient stats

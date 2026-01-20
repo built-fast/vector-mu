@@ -13,11 +13,62 @@ final class Database implements ModuleInterface {
 	public function register(): void {
 		if ( class_exists( WP_CLI::class ) ) {
 			WP_CLI::add_command( 'vector db summary', [ $this, 'summaryCommand' ] );
+			WP_CLI::add_command( 'vector db size', [ $this, 'sizeCommand' ] );
 			WP_CLI::add_command( 'vector db tables', [ $this, 'tablesCommand' ] );
 			WP_CLI::add_command( 'vector db revisions', [ $this, 'revisionsCommand' ] );
 			WP_CLI::add_command( 'vector db transients', [ $this, 'transientsCommand' ] );
 			WP_CLI::add_command( 'vector db orphans', [ $this, 'orphansCommand' ] );
 		}
+	}
+
+	/**
+	 * Get the total database size.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--format=<format>]
+	 * : Output format. Options: human, bytes, json. Default: human.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp vector db size
+	 *     wp vector db size --format=bytes
+	 *     wp vector db size --format=json
+	 *
+	 * @param list<string>         $args
+	 * @param array<string, mixed> $assoc_args
+	 */
+	public function sizeCommand( array $args, array $assoc_args ): void {
+		global $wpdb;
+
+		$format = $assoc_args['format'] ?? 'human';
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$total_size = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT SUM(data_length + index_length) FROM information_schema.TABLES WHERE table_schema = %s',
+				$wpdb->dbname
+			)
+		);
+
+		if ( 'json' === $format ) {
+			$output = wp_json_encode(
+				[
+					'bytes'     => $total_size,
+					'formatted' => $this->formatSize( $total_size ),
+				]
+			);
+			WP_CLI::log( false !== $output ? $output : '{}' );
+			return;
+		}
+
+		if ( 'bytes' === $format ) {
+			WP_CLI::log( (string) $total_size );
+			return;
+		}
+
+		// Default to human readable.
+		WP_CLI::log( $this->formatSize( $total_size ) );
 	}
 
 	/**
