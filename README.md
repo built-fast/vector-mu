@@ -45,13 +45,13 @@ wp user impersonate <user>
 wp user impersonate admin --ttl=60
 ```
 
-### ChangeDomain
+### Domain
 
 WP-CLI command for changing the site domain. Handles http/https and www/non-www variants using regex search-replace.
 
 ```bash
-wp change-domain old.example.com new.example.com
-wp change-domain old.example.com new.example.com --dry-run
+wp vector domain rename old.example.com new.example.com
+wp vector domain rename old.example.com new.example.com --dry-run
 ```
 
 ### Blueprint

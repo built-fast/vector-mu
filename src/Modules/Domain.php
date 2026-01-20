@@ -7,7 +7,7 @@ namespace VectorMU\Modules;
 use VectorMU\Contracts\ModuleInterface;
 use WP_CLI;
 
-final class ChangeDomain implements ModuleInterface {
+final class Domain implements ModuleInterface {
 
 	private const TABLES = [
 		'options',
@@ -19,7 +19,7 @@ final class ChangeDomain implements ModuleInterface {
 
 	public function register(): void {
 		if ( class_exists( WP_CLI::class ) ) {
-			WP_CLI::add_command( 'change-domain', [ $this, 'cliCommand' ] );
+			WP_CLI::add_command( 'vector domain rename', [ $this, 'cliCommand' ] );
 		}
 	}
 
@@ -39,8 +39,8 @@ final class ChangeDomain implements ModuleInterface {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp change-domain example.com newsite.com
-	 *     wp change-domain example.com newsite.com --dry-run
+	 *     wp vector domain rename example.com newsite.com
+	 *     wp vector domain rename example.com newsite.com --dry-run
 	 *
 	 * @param list<string>         $args
 	 * @param array<string, mixed> $assoc_args
@@ -84,6 +84,54 @@ final class ChangeDomain implements ModuleInterface {
 				'launch' => false,
 			]
 		);
+
+		$this->updateConfigConstants( $old_domain, $new_domain, $dry_run );
+	}
+
+	/**
+	 * Update WP_HOME and WP_SITEURL in wp-config.php if they exist.
+	 */
+	private function updateConfigConstants( string $old_domain, string $new_domain, bool $dry_run ): void {
+		$constants = [ 'WP_HOME', 'WP_SITEURL' ];
+
+		foreach ( $constants as $const ) {
+			// Check if constant exists in wp-config.php.
+			$result = WP_CLI::launch_self(
+				'config get',
+				[ $const ],
+				[ 'type' => 'constant' ],
+				false,
+				true
+			);
+
+			// Return code 0 means success (found).
+			if ( 0 !== $result->return_code ) {
+				continue;
+			}
+
+			$current_value = trim( $result->stdout );
+
+			$old_escaped = preg_quote( $old_domain, '/' );
+			$pattern     = "/(https?:)?\/\/(www\.)?{$old_escaped}/";
+			$replacement = "$1//$2{$new_domain}";
+
+			$new_value = preg_replace( $pattern, $replacement, $current_value );
+
+			if ( $current_value !== $new_value && null !== $new_value ) {
+				if ( $dry_run ) {
+					WP_CLI::log( "Dry run: Would update $const in wp-config.php from '$current_value' to '$new_value'" );
+				} else {
+					WP_CLI::log( "Updating $const in wp-config.php..." );
+					WP_CLI::launch_self(
+						'config set',
+						[ $const, $new_value ],
+						[ 'type' => 'constant' ],
+						false,
+						true
+					);
+				}
+			}
+		}
 	}
 
 	/**

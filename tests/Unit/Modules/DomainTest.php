@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use VectorMU\Modules\ChangeDomain;
+use VectorMU\Modules\Domain;
 
 beforeEach( function () {
-	$this->changeDomain = new ChangeDomain();
+	$this->domain = new Domain();
 } );
 
 describe( 'register', function () {
-	it( 'registers change-domain command when WP_CLI available', function () {
-		$this->changeDomain->register();
+	it( 'registers domain command when WP_CLI available', function () {
+		$this->domain->register();
 
 		// No assertion needed - just verifying no errors when WP_CLI not loaded
 		expect( true )->toBeTrue();
@@ -23,11 +23,11 @@ describe( 'getTables', function () {
 		$wpdb         = new stdClass();
 		$wpdb->prefix = 'wp_';
 
-		$reflection = new ReflectionClass( ChangeDomain::class );
+		$reflection = new ReflectionClass( Domain::class );
 		$method     = $reflection->getMethod( 'getTables' );
 		$method->setAccessible( true );
 
-		$tables = $method->invoke( $this->changeDomain );
+		$tables = $method->invoke( $this->domain );
 
 		expect( $tables )->toBe( [
 			'wp_options',
@@ -43,11 +43,11 @@ describe( 'getTables', function () {
 		$wpdb         = new stdClass();
 		$wpdb->prefix = 'custom_';
 
-		$reflection = new ReflectionClass( ChangeDomain::class );
+		$reflection = new ReflectionClass( Domain::class );
 		$method     = $reflection->getMethod( 'getTables' );
 		$method->setAccessible( true );
 
-		$tables = $method->invoke( $this->changeDomain );
+		$tables = $method->invoke( $this->domain );
 
 		expect( $tables )->toBe( [
 			'custom_options',
