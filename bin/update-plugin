@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PLUGINS_DIR="$PROJECT_DIR/plugins"
+
+usage() {
+	echo "Usage: $(basename "$0") <slug> [version]"
+	echo
+	echo "Downloads a plugin from wordpress.org into plugins/<slug>/"
+	echo
+	echo "Examples:"
+	echo "  $(basename "$0") redis-cache          # latest stable"
+	echo "  $(basename "$0") redis-cache 2.5.2    # specific version"
+	exit 1
+}
+
+if [[ $# -lt 1 ]]; then
+	usage
+fi
+
+SLUG="$1"
+VERSION="${2:-}"
+
+if [[ -n "$VERSION" ]]; then
+	ZIP_URL="https://downloads.wordpress.org/plugin/${SLUG}.${VERSION}.zip"
+else
+	ZIP_URL="https://downloads.wordpress.org/plugin/${SLUG}.latest-stable.zip"
+fi
+
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+ZIP_FILE="$TMPDIR/${SLUG}.zip"
+
+echo "Downloading ${SLUG}..."
+curl -sSfL -o "$ZIP_FILE" "$ZIP_URL"
+
+echo "Extracting to plugins/${SLUG}/..."
+mkdir -p "$PLUGINS_DIR"
+rm -rf "${PLUGINS_DIR:?}/${SLUG}"
+unzip -q "$ZIP_FILE" -d "$PLUGINS_DIR"
+
+# Read version from the plugin's main PHP file header
+MAIN_FILE="$PLUGINS_DIR/$SLUG/$SLUG.php"
+if [[ -f "$MAIN_FILE" ]]; then
+	INSTALLED_VERSION=$(grep -i "^[[:space:]]*\*[[:space:]]*Version:" "$MAIN_FILE" | head -1 | sed 's/.*Version:[[:space:]]*//' | tr -d '[:space:]')
+	echo "Installed ${SLUG} version ${INSTALLED_VERSION}"
+else
+	echo "Installed ${SLUG} (could not detect version)"
+fi

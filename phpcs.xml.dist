@@ -5,6 +5,8 @@
     <file>./src</file>
     <file>./public</file>
 
+    <exclude-pattern>./plugins/*</exclude-pattern>
+
     <arg name="extensions" value="php"/>
     <arg name="colors"/>
     <arg value="sp"/>

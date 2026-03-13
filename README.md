@@ -30,6 +30,31 @@ require:
   - /path/to/vector-mu/cli.php
 ```
 
+## Vendor Plugins
+
+The `plugins/` directory contains third-party WordPress plugins that are loaded as must-use plugins. These are managed with the `bin/update-plugin` script.
+
+### Adding or Updating a Plugin
+
+```bash
+bin/update-plugin <slug> [version]
+bin/update-plugin redis-cache          # latest stable
+bin/update-plugin redis-cache 2.5.2    # specific version
+```
+
+After updating, commit the new plugin files.
+
+### redis-cache
+
+The [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) plugin provides persistent object caching via Redis. Configure the connection in `wp-config.php`:
+
+```php
+define( 'WP_REDIS_HOST', '127.0.0.1' );
+define( 'WP_REDIS_PORT', 6379 );
+```
+
+The `object-cache.php` drop-in is automatically installed to `wp-content/object-cache.php` on boot. The plugin's built-in drop-in auto-update is disabled since Vector MU manages it.
+
 ## Modules
 
 ### PluginBlocker
@@ -478,3 +503,7 @@ Run `direnv allow` to activate.
 
 1. Create a class in `src/Modules/` implementing `ModuleInterface`
 2. Add the class to the `MODULES` array in `src/Plugin.php`
+
+## License
+
+GPL-3.0

@@ -20,6 +20,7 @@ use VectorMU\Modules\UploadsSize;
 use VectorMU\Modules\UserImpersonate;
 use VectorMU\Modules\Users;
 use VectorMU\Modules\VectorApi;
+use VectorMU\Modules\VendorPlugins;
 
 final class Plugin {
 
@@ -29,6 +30,7 @@ final class Plugin {
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
+		VendorPlugins::class,
 		Blueprint::class,
 		Cleanup::class,
 		Cron::class,
