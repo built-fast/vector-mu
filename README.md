@@ -107,9 +107,9 @@ wp vector cleanup all --dry-run          # Preview what would be deleted
 WP-CLI commands for inspecting scheduled cron events.
 
 ```bash
-wp vector cron                           # List scheduled events
-wp vector cron --overdue                 # Show only overdue events
-wp vector cron --hook=woocommerce        # Filter by hook name
+wp vector cron list                      # List scheduled events
+wp vector cron list --overdue            # Show only overdue events
+wp vector cron list --hook=woocommerce   # Filter by hook name
 wp vector cron status                    # Show cron system status
 ```
 
@@ -118,7 +118,7 @@ wp vector cron status                    # Show cron system status
 WP-CLI commands for database diagnostics.
 
 ```bash
-wp vector db                             # Show database summary
+wp vector db summary                     # Show database summary
 wp vector db size                        # Show total database size
 wp vector db size --format=bytes         # Show size in bytes
 wp vector db size --format=json          # Show size as JSON
@@ -151,7 +151,7 @@ wp vector health --format=json
 WP-CLI commands for media library diagnostics.
 
 ```bash
-wp vector media                          # Show media library summary
+wp vector media summary                  # Show media library summary
 wp vector media orphaned                 # Find files not in media library
 wp vector media missing                  # Find attachments with missing files
 wp vector media duplicates               # Find duplicate files
