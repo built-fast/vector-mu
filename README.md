@@ -79,47 +79,6 @@ wp vector domain rename old.example.com new.example.com
 wp vector domain rename old.example.com new.example.com --dry-run
 ```
 
-### Blueprint
-
-WP-CLI commands for exporting and importing WordPress sites as portable archives. Useful for migrating configured sites between Vector instances.
-
-**Export a site:**
-
-By default, exports the database and all plugins/themes (but not uploads):
-
-```bash
-wp vector blueprint export site-backup.tar.gz
-wp vector blueprint export site-backup.tar.gz --include-uploads
-wp vector blueprint export site-backup.tar.gz --include-uploads --max-upload-size=100M
-wp vector blueprint export site-backup.tar.gz --skip-plugins --skip-themes  # DB only
-wp vector blueprint export site-backup.tar.gz --exclude-tables=wp_sessions,wp_logs
-```
-
-**Import a site:**
-
-```bash
-wp vector blueprint import site-backup.tar.gz --target-url=https://newsite.com
-wp vector blueprint import site-backup.tar.gz --target-url=https://newsite.com --dry-run
-wp vector blueprint import site-backup.tar.gz --target-url=https://newsite.com --wipe --force
-wp vector blueprint import site-backup.tar.gz --target-url=https://newsite.com --skip-database
-wp vector blueprint import site-backup.tar.gz --target-url=https://newsite.com --skip-content
-```
-
-Options:
-- `--wipe` - Wipe existing plugins/themes/uploads before importing
-- `--force` - Skip confirmation prompts
-- `--skip-database` - Skip database import
-- `--skip-content` - Skip wp-content import
-- `--skip-search-replace` - Skip URL search-replace
-
-**Validate an archive:**
-
-```bash
-wp vector blueprint validate site-backup.tar.gz
-```
-
-Shows archive contents and installed plugins/themes with version and active state.
-
 ### UploadsSize
 
 WP-CLI command for checking the size of the wp-content/uploads directory.
@@ -304,56 +263,6 @@ The client automatically:
 - Retrieves the HMAC secret from the `vector_hmac_secret` option
 - Signs requests with the `X-Signature` header
 - Targets `https://api.builtfast.com/api/v1/vector/wordpress/*`
-
-## Vector Partner Workflow
-
-Example workflow for migrating a configured WordPress site to a new Vector instance:
-
-**1. Export from your source site:**
-
-```bash
-# SSH to your source WordPress server
-ssh user@source-server.com
-
-# Export the site (includes all plugins and themes by default)
-cd /path/to/wordpress
-wp vector blueprint export /tmp/my-site.tar.gz
-
-# Check uploads size before including
-wp vector uploads-size
-# If acceptable, include uploads:
-wp vector blueprint export /tmp/my-site.tar.gz --include-uploads --max-upload-size=500M
-```
-
-**2. Upload the archive to a publicly accessible URL:**
-
-```bash
-# Upload to S3, your own server, or any accessible location
-aws s3 cp /tmp/my-site.tar.gz s3://my-bucket/my-site.tar.gz --acl public-read
-```
-
-**3. Create a new Vector site with the archive:**
-
-```bash
-curl -X POST "https://api.builtfast.com/api/v1/vector/sites?archive_url=https://my-bucket.s3.amazonaws.com/my-site.tar.gz" \
-  -H "Authorization: Bearer YOUR_API_TOKEN" \
-  -H "Content-Type: application/json"
-```
-
-**4. SSH to your Vector dev container and import:**
-
-```bash
-# SSH to your new Vector container
-ssh vector@your-container.builtfast.com
-
-# Import the blueprint (--wipe replaces existing content, --force skips prompts)
-cd /var/www/html
-wp vector blueprint import /tmp/my-site.tar.gz --target-url=https://your-new-site.com --wipe --force
-
-# Verify the import
-wp option get siteurl
-wp option get home
-```
 
 ## Development
 

@@ -1,42 +1,5 @@
 # WP-CLI Commands Reference
 
-## Blueprint
-
-Export/import WordPress sites as portable archives.
-
-### Export
-
-```bash
-wp vector blueprint export [<output>] [--include-uploads] [--max-upload-size=<size>] [--include-plugins=<plugins>] [--include-themes=<themes>] [--exclude-tables=<tables>]
-```
-
-```bash
-# Basic export
-wp vector blueprint export
-
-# With uploads and plugins
-wp vector blueprint export --include-uploads --include-plugins=woocommerce,acf
-```
-
-### Import
-
-```bash
-wp vector blueprint import <archive> --target-url=<url> [--skip-database] [--skip-content] [--skip-search-replace] [--dry-run] [--force]
-```
-
-```bash
-wp vector blueprint import backup.tar.gz --target-url=https://newsite.com
-wp vector blueprint import backup.tar.gz --target-url=https://newsite.com --dry-run
-```
-
-### Validate
-
-```bash
-wp vector blueprint validate <archive>
-```
-
----
-
 ## Change Domain
 
 ```bash

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
-use VectorMU\Modules\Blueprint;
 use VectorMU\Modules\Cleanup;
 use VectorMU\Modules\Cron;
 use VectorMU\Modules\Database;
@@ -31,7 +30,6 @@ final class Plugin {
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
 		VendorPlugins::class,
-		Blueprint::class,
 		Cleanup::class,
 		Cron::class,
 		Database::class,
