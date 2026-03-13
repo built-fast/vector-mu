@@ -96,6 +96,7 @@ final class Domain implements ModuleInterface {
 
 		foreach ( $constants as $const ) {
 			// Check if constant exists in wp-config.php.
+			/** @var \WP_CLI\ProcessRun $result */
 			$result = WP_CLI::launch_self(
 				'config get',
 				[ $const ],
