@@ -1,0 +1,21 @@
+/vendor/
+/plugins/*/vendor/
+/plugins/*/composer.lock
+
+# Local config overrides
+/.envrc
+/phpstan.neon
+/phpcs.xml
+/phpunit.xml
+
+# Test cache
+/.phpunit.cache
+
+# IDE
+/.idea/
+/.vscode/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db

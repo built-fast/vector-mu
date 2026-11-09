@@ -1,0 +1,47 @@
+{
+    "name": "vector/vector-mu",
+    "description": "Must-use plugin for the Vector hosting platform",
+    "type": "wordpress-muplugin",
+    "license": "GPL-3.0-or-later",
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "brain/monkey": "^2.6",
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+        "pestphp/pest": "^3.0",
+        "php-stubs/wordpress-stubs": "^6.0",
+        "php-stubs/wp-cli-stubs": "^2.0",
+        "phpstan/extension-installer": "^1.0",
+        "phpstan/phpstan": "^2.0",
+        "slevomat/coding-standard": "^8.0",
+        "szepeviktor/phpstan-wordpress": "^2.0",
+        "wp-coding-standards/wpcs": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "VectorMU\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "VectorMU\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        },
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "lint": "phpcs",
+        "lint:fix": "phpcbf",
+        "analyze": "phpstan analyze",
+        "test": "pest",
+        "test:fork": "composer --working-dir=plugins/vector-wordpress-plugin tests:unit"
+    }
+}
