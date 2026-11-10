@@ -6,6 +6,7 @@ namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
 use VectorMU\Modules\VendorPlugins;
+use VectorMU\Modules\YmirConflictGuard;
 
 final class Plugin {
 
@@ -15,6 +16,7 @@ final class Plugin {
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
+		YmirConflictGuard::class,
 		VendorPlugins::class,
 	];
 
