@@ -1,0 +1,22 @@
+# Paths left out of the release artifact (bin/build-release builds it from
+# `git archive`). The fork's own .gitattributes excludes some of its dev files;
+# the rest are listed here.
+/.claude export-ignore
+/.github export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/bin export-ignore
+/phpcs.xml.dist export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml.dist export-ignore
+/stubs export-ignore
+/tests export-ignore
+
+/plugins/vector-wordpress-plugin/.* export-ignore
+/plugins/vector-wordpress-plugin/bin export-ignore
+/plugins/vector-wordpress-plugin/tests export-ignore
+/plugins/vector-wordpress-plugin/composer.lock export-ignore
+/plugins/vector-wordpress-plugin/phpstan.neon export-ignore
+/plugins/vector-wordpress-plugin/phpstan-baseline.neon export-ignore
+/plugins/vector-wordpress-plugin/phpunit.xml.dist export-ignore
+/plugins/vector-wordpress-plugin/vendor export-ignore
