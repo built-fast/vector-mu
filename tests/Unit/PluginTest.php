@@ -19,7 +19,7 @@ it( 'registers only module classes', function (): void {
 it( 'bundles plugins whose entry files exist', function (): void {
 	$plugins = ( new ReflectionClass( VendorPlugins::class ) )->getReflectionConstant( 'PLUGINS' )->getValue();
 
-	foreach ( $plugins as $plugin ) {
+	foreach ( array_keys( $plugins ) as $plugin ) {
 		expect( dirname( __DIR__, 2 ) . '/plugins/' . $plugin )->toBeFile();
 	}
 } );

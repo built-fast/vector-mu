@@ -38,6 +38,10 @@ final class Plugin {
 		if ( ! defined( 'VECTOR_MU_PATH' ) ) {
 			define( 'VECTOR_MU_PATH', dirname( __DIR__ ) );
 		}
+
+		if ( ! defined( 'VECTOR_MU_RUNTIME' ) ) {
+			define( 'VECTOR_MU_RUNTIME', Runtime::fromEnvironment() );
+		}
 	}
 
 	private static function registerModules(): void {

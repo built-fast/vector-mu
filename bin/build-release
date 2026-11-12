@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+#
+# Builds the vector-mu release artifact from the committed tree at HEAD:
+#
+#   <out-dir>/vector-mu-<version>.tar.gz
+#   <out-dir>/vector-mu-<version>.tar.gz.sha256   (sha256sum format)
+#
+# The tarball holds a single vector-mu/ directory: `git archive` of HEAD
+# (paths marked export-ignore in .gitattributes left out) plus vendor/ from
+# `composer install --no-dev`. It is reproducible for a given commit and
+# Composer version: GNU tar with sorted names, the commit's time as every
+# mtime, root ownership, normalized modes, and `gzip -n`.
+#
+# Needs git, php, composer, GNU tar (gtar on macOS: brew install gnu-tar),
+# gzip, and sha256sum or shasum.
+set -euo pipefail
+
+usage() {
+	echo "Usage: $(basename "$0") <version> <out-dir>" >&2
+	echo >&2
+	echo "Builds vector-mu-<version>.tar.gz and its .sha256 from HEAD." >&2
+	echo "<version> must match Plugin::VERSION and the Version: header in vector-mu.php." >&2
+	exit 2
+}
+
+die() {
+	echo "build-release: $*" >&2
+	exit 1
+}
+
+[[ $# -eq 2 ]] || usage
+
+VERSION="$1"
+OUT_DIR="$2"
+
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must be X.Y.Z, got '$VERSION'"
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+NAME="vector-mu-${VERSION}"
+
+find_gnu_tar() {
+	local candidate
+	for candidate in gtar tar; do
+		if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version 2>/dev/null | head -n1 | grep -q 'GNU tar'; then
+			echo "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1"
+	else
+		shasum -a 256 "$1"
+	fi
+}
+
+TAR="$(find_gnu_tar)" || die "GNU tar is required (on macOS: brew install gnu-tar, which provides gtar)"
+command -v composer >/dev/null 2>&1 || die "composer is required"
+command -v php >/dev/null 2>&1 || die "php is required"
+
+cd "$PROJECT_DIR"
+
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+	echo "build-release: warning: uncommitted changes are not included; building HEAD ($(git rev-parse --short HEAD))" >&2
+fi
+
+COMMIT_TIME="$(git log -1 --format=%ct HEAD)"
+
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+STAGE="$WORK_DIR/vector-mu"
+mkdir "$STAGE"
+
+git archive --format=tar HEAD | "$TAR" -x -C "$STAGE" -f -
+
+# The version in the tree must match the requested one.
+plugin_version="$(sed -n "s/^[[:space:]]*public const VERSION = '\([^']*\)';.*/\1/p" "$STAGE/src/Plugin.php")"
+header_version="$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*\([^[:space:]]*\).*/\1/p' "$STAGE/vector-mu.php")"
+
+[[ "$plugin_version" == "$VERSION" ]] || die "Plugin::VERSION is '$plugin_version', expected '$VERSION'"
+[[ "$header_version" == "$VERSION" ]] || die "vector-mu.php Version: header is '$header_version', expected '$VERSION'"
+
+# Runtime dependencies and the optimized autoloader, without dev packages,
+# then check that vendor/ holds only packages from composer.lock's runtime list.
+COMPOSER_ROOT_VERSION="$VERSION" composer install \
+	--working-dir="$STAGE" \
+	--no-dev \
+	--optimize-autoloader \
+	--no-interaction \
+	--no-progress \
+	--no-plugins \
+	--no-scripts \
+	--prefer-dist
+
+# shellcheck disable=SC2016 # PHP code, not shell expansions
+php -r '
+	$lock = json_decode( (string) file_get_contents( $argv[1] ), true, 512, JSON_THROW_ON_ERROR );
+	$installed = json_decode( (string) file_get_contents( $argv[2] ), true, 512, JSON_THROW_ON_ERROR );
+	$runtime = array_column( $lock["packages"] ?? [], "name" );
+	if ( ( $installed["dev"] ?? true ) !== false || ( $installed["dev-package-names"] ?? [] ) !== [] ) {
+		fwrite( STDERR, "vendor/composer/installed.json lists dev packages\n" );
+		exit( 1 );
+	}
+	foreach ( $installed["packages"] ?? [] as $package ) {
+		if ( ! in_array( $package["name"], $runtime, true ) ) {
+			fwrite( STDERR, "vendor/ holds a non-runtime package: {$package["name"]}\n" );
+			exit( 1 );
+		}
+	}
+' "$STAGE/composer.lock" "$STAGE/vendor/composer/installed.json" || die "dev dependencies in vendor/"
+
+# composer.json/lock only drive the install above; the plugin doesn't need them.
+rm -f "$STAGE/composer.json" "$STAGE/composer.lock"
+
+# Normalize modes: nothing in the artifact is executable.
+find "$STAGE" -type d -exec chmod 0755 {} +
+find "$STAGE" -type f -exec chmod 0644 {} +
+
+# Self-check the tree before packing it.
+check_tree() {
+	local bad path
+
+	bad="$(find "$STAGE" ! -type f ! -type d)"
+	[[ -z "$bad" ]] || die "non-regular files in the artifact: $bad"
+
+	bad="$(find "$STAGE" -type f -links +1)"
+	[[ -z "$bad" ]] || die "hard links in the artifact: $bad"
+
+	for path in \
+		vector-mu.php \
+		mu-loader.php \
+		LICENSE \
+		README.md \
+		src/Plugin.php \
+		src/Runtime.php \
+		vendor/autoload.php \
+		vendor/composer/installed.json \
+		plugins/vector-wordpress-plugin/vector-wordpress-plugin.php \
+		plugins/vector-wordpress-plugin/bootstrap.php \
+		plugins/vector-wordpress-plugin/src/Autoloader.php \
+		plugins/vector-wordpress-plugin/LICENSE; do
+		[[ -f "$STAGE/$path" ]] || die "missing from the artifact: $path"
+	done
+
+	for path in \
+		.claude .github .gitattributes .gitignore bin stubs tests \
+		composer.json composer.lock phpcs.xml.dist phpstan.neon.dist phpunit.xml.dist \
+		plugins/vector-wordpress-plugin/bin \
+		plugins/vector-wordpress-plugin/tests \
+		plugins/vector-wordpress-plugin/vendor \
+		plugins/vector-wordpress-plugin/composer.lock \
+		plugins/vector-wordpress-plugin/phpstan.neon \
+		plugins/vector-wordpress-plugin/phpstan-baseline.neon \
+		plugins/vector-wordpress-plugin/phpunit.xml.dist; do
+		[[ ! -e "$STAGE/$path" ]] || die "dev path in the artifact: $path"
+	done
+
+	bad="$(find "$STAGE/plugins/vector-wordpress-plugin" -name '.*')"
+	[[ -z "$bad" ]] || die "dotfiles in the fork: $bad"
+}
+
+check_tree
+
+mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+TARBALL="$OUT_DIR/$NAME.tar.gz"
+
+LC_ALL=C "$TAR" \
+	--create \
+	--format=gnu \
+	--sort=name \
+	--mtime="@$COMMIT_TIME" \
+	--owner=0 --group=0 --numeric-owner \
+	--directory="$WORK_DIR" \
+	vector-mu |
+	gzip -n -9 >"$TARBALL"
+
+# Every entry is a file or directory under vector-mu/.
+LC_ALL=C "$TAR" -tvzf "$TARBALL" | awk '
+	substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { print "bad entry type: " $0; bad = 1 }
+	$NF !~ /^vector-mu(\/|$)/ { print "entry outside vector-mu/: " $0; bad = 1 }
+	END { exit bad }
+' >&2 || die "unexpected entries in $TARBALL"
+
+(cd "$OUT_DIR" && sha256 "$NAME.tar.gz" | awk '{ print $1 "  " $2 }' >"$NAME.tar.gz.sha256")
+
+echo "Built $TARBALL"
+cat "$OUT_DIR/$NAME.tar.gz.sha256"
