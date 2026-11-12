@@ -1,0 +1,45 @@
+name: Run GitHub Actions linters and analysis
+
+on:
+  pull_request:
+    branches:
+      - main
+
+    paths:
+      - '.github/workflows/*.yml'
+
+  push:
+    branches:
+      - main
+
+    paths:
+      - '.github/workflows/*.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actions:
+    name: Check GitHub Actions
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup matchers
+        run: echo "::add-matcher::.github/matchers/actionlint.json"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run actionlint
+        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          advanced-security: false
