@@ -71,8 +71,8 @@ MySQL 8.4.
 
    `.github/workflows/release.yml` runs CI, fails unless the tag matches both
    versions, builds and tests the artifact, and publishes the GitHub release.
-3. Bump the pinned version and sha256 in `built-fast/vector`; sites get the new
-   vector-mu with the next Vector release.
+3. Update the version and sha256 pinned by the hosting platform; sites get the
+   new vector-mu with its next release.
 
 ## Bundled plugins
 
