@@ -6,6 +6,7 @@ namespace VectorMU\Modules;
 
 use Stringable;
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Support\OpenBasedir;
 
 /**
  * Lets the site's own HTTP requests through a dev host's access gate.
@@ -113,7 +114,7 @@ final class LoopbackHeader implements ModuleInterface {
 
 		$path = $this->secretsDir . '/' . $user . '/loopback';
 
-		if ( ! self::openBasedirAllows( $path ) || ! is_file( $path ) || ! is_readable( $path ) ) {
+		if ( ! OpenBasedir::allows( $path ) || ! is_file( $path ) || ! is_readable( $path ) ) {
 			return null;
 		}
 
@@ -145,25 +146,6 @@ final class LoopbackHeader implements ModuleInterface {
 		}
 
 		return 1 === preg_match( '/\A[A-Za-z0-9_][A-Za-z0-9_.-]*\z/', $entry['name'] ) ? $entry['name'] : null;
-	}
-
-	/**
-	 * Whether open_basedir permits the path, so checking it can't warn.
-	 */
-	private static function openBasedirAllows( string $path ): bool {
-		$basedir = (string) ini_get( 'open_basedir' );
-
-		if ( '' === $basedir ) {
-			return true;
-		}
-
-		foreach ( explode( PATH_SEPARATOR, $basedir ) as $allowed ) {
-			if ( '' !== $allowed && str_starts_with( $path, $allowed ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	private function isOwnHost( mixed $url ): bool {
