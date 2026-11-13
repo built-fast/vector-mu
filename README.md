@@ -37,6 +37,22 @@ Unset means `lambda` because WP-CLI on a dev host doesn't see the site's FPM poo
 environment; without `YMIR_ENVIRONMENT` the fork stays inert there anyway. The Ymir
 conflict guard runs in both runtimes.
 
+## Loopback header
+
+Dev sites sit behind an access gate. So the site's requests to itself (Site Health,
+cron spawning, async and REST self-calls) get through, the `LoopbackHeader` module
+sends `X-Vector-Loopback: <secret>` on WP HTTP API requests whose host is the site's
+own (the host of `home_url()` or `site_url()`, any scheme, case-insensitive), and on
+no others. The header is removed before a redirect to another host, and a redirect
+chain that has left the site's host never gets it back.
+
+The secret is read, at most once per request, from
+`/etc/vector/sites/<user>/loopback`, where `<user>` is the effective POSIX user. It
+must be 64 lowercase hex characters (a trailing newline is fine). The module keys off
+this file rather than `VECTOR_RUNTIME`, since WP-CLI and cron on a dev host don't see
+the FPM pool's environment; where the file is missing, unreadable, or malformed, or
+the `posix` extension is unavailable, it does nothing. The secret is never logged.
+
 ## Release artifact
 
 Each release `vX.Y.Z` on GitHub has two assets:

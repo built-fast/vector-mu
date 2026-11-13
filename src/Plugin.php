@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Modules\LoopbackHeader;
 use VectorMU\Modules\VendorPlugins;
 use VectorMU\Modules\YmirConflictGuard;
 
@@ -18,6 +19,7 @@ final class Plugin {
 	private const MODULES = [
 		YmirConflictGuard::class,
 		VendorPlugins::class,
+		LoopbackHeader::class,
 	];
 
 	public static function boot(): void {
