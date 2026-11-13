@@ -16,6 +16,12 @@
 #   without YMIR_ENVIRONMENT), and the homepage returns 200 with no warnings or
 #   fatals.
 # - VECTOR_RUNTIME set to an unknown value: logged, and treated as dev.
+# - Dev mail capture: with VECTOR_RUNTIME=dev and SMTP configured in
+#   phpmailer_init, as a mailer plugin does, wp_mail() pipes the whole message
+#   to a stand-in capture binary and returns true without connecting anywhere;
+#   when the binary fails, wp_mail() fires wp_mail_failed and returns false. A
+#   test mu-plugin points the module at the stand-in, since the real binary's
+#   path is fixed.
 #
 # Needs php (with mysqli), curl, a MySQL server, and what bin/build-release
 # needs when no artifact is given. Settings (environment):
@@ -284,6 +290,92 @@ else
 	fail "unknown: no log line"
 	cat "$WORK_DIR/bogus.err" >&2
 fi
+
+# --- Dev mail capture -------------------------------------------------------
+
+# The stand-in records its argv and stdin, and exits with the code in
+# $CAPTURE_DIR/exit (0 without it).
+CAPTURE_DIR="$WORK_DIR/capture"
+mkdir -p "$CAPTURE_DIR"
+cat >"$CAPTURE_DIR/vector-sendmail" <<SCRIPT
+#!/bin/sh
+printf '%s\n' "\$@" > "$CAPTURE_DIR/args"
+cat > "$CAPTURE_DIR/message.eml"
+[ -f "$CAPTURE_DIR/exit" ] && exit "\$(cat "$CAPTURE_DIR/exit")"
+exit 0
+SCRIPT
+chmod 0755 "$CAPTURE_DIR/vector-sendmail"
+
+# Only in dev: swap vector-mu's capture for one using the stand-in, and set up
+# SMTP the way a mailer plugin does, at a host that never answers (TEST-NET-1).
+cat >"$MU_DIR/zz-vector-mu-mail-test.php" <<PHP
+<?php
+if ( 'dev' !== getenv( 'VECTOR_RUNTIME' ) ) {
+	return;
+}
+remove_all_filters( 'pre_wp_mail', PHP_INT_MIN );
+( new VectorMU\\Modules\\DevMailCapture( VectorMU\\Runtime::DEV, '$CAPTURE_DIR/vector-sendmail' ) )->register();
+add_action( 'phpmailer_init', static function ( \$mailer ) {
+	\$mailer->isSMTP();
+	\$mailer->Host     = '192.0.2.1';
+	\$mailer->Port     = 587;
+	\$mailer->SMTPAuth = true;
+	\$mailer->Username = 'smtp-user';
+	\$mailer->Password = 'smtp-pass';
+	\$mailer->Timeout  = 5;
+} );
+add_action( 'wp_mail_failed', static function ( \$error ) {
+	echo 'wp_mail_failed: ', \$error->get_error_message(), ' ';
+} );
+PHP
+
+MAIL_PROBE='
+var_export( wp_mail( "Ada <ada@example.com>", "Captured subject", "Captured body", [ "From: Site <site@example.com>", "Cc: bob@example.com", "Bcc: carol@example.com", "X-Probe: 1" ] ) );
+'
+
+RUNTIME=dev
+started="$(date +%s)"
+result="$(wp eval "$MAIL_PROBE")"
+elapsed=$(($(date +%s) - started))
+check_eq "dev mail: wp_mail() returns true" "$result" "true"
+if [[ "$elapsed" -lt 5 ]]; then
+	pass "dev mail: no SMTP connection attempted"
+else
+	fail "dev mail: wp_mail() took ${elapsed}s, as if it tried SMTP"
+fi
+check_eq "dev mail: argv" "$(tr '\n' ' ' <"$CAPTURE_DIR/args")" "-t -i "
+for header in \
+	'To: Ada <ada@example.com>' \
+	'Cc: bob@example.com' \
+	'Bcc: carol@example.com' \
+	'Subject: Captured subject' \
+	'X-Probe: 1' \
+	'From: Site <site@example.com>'; do
+	if grep -qxF "$header" "$CAPTURE_DIR/message.eml"; then
+		pass "dev mail: message has '$header'"
+	else
+		fail "dev mail: message lacks '$header'"
+		cat "$CAPTURE_DIR/message.eml" >&2
+	fi
+done
+if grep -qxF 'Captured body' "$CAPTURE_DIR/message.eml"; then
+	pass "dev mail: message has the body"
+else
+	fail "dev mail: message lacks the body"
+fi
+
+echo 75 >"$CAPTURE_DIR/exit"
+result="$(wp eval "$MAIL_PROBE")"
+case "$result" in
+"wp_mail_failed: Could not capture mail: "*"exited 75 false") pass "dev mail: a refused message fails wp_mail()" ;;
+*) fail "dev mail: a refused message gave '$result'" ;;
+esac
+rm -f "$CAPTURE_DIR/exit"
+
+unset RUNTIME
+check_eq "unset: mail capture only where the binary exists" \
+	"$(wp eval 'echo has_filter( "pre_wp_mail" ) ? "on" : "off";')" \
+	"$(if [[ -x /opt/vector/bin/vector-sendmail ]]; then echo on; else echo off; fi)"
 
 if [[ "$FAILURES" -gt 0 ]]; then
 	die "$FAILURES check(s) failed"

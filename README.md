@@ -53,6 +53,30 @@ this file rather than `VECTOR_RUNTIME`, since WP-CLI and cron on a dev host don'
 the FPM pool's environment; where the file is missing, unreadable, or malformed, or
 the `posix` extension is unavailable, it does nothing. The secret is never logged.
 
+## Dev mail capture
+
+On dev hosts, mail is captured instead of sent. PHP's `sendmail_path` there points
+at the host's capture binary, `/opt/vector/bin/vector-sendmail`, which catches
+`mail()` and core's default transport, but a mailer plugin (SMTP or an API) would
+still send. So the `DevMailCapture` module hooks `pre_wp_mail` at the earliest
+priority and stops `wp_mail()` before any mailer plugin's transport:
+
+- It builds the message as core's `wp_mail()` would, with WordPress's PHPMailer: the
+  same handling of recipients, headers, From, Content-Type and charset, attachments,
+  and embeds, the same `wp_mail_*` filters, and `phpmailer_init`. It uses a fresh
+  PHPMailer, not the global one a mailer plugin may have replaced, and sets the
+  transport back to sendmail after `phpmailer_init`, so SMTP or API settings made
+  there are never used. The headers include Bcc, as `sendmail -t` reads them.
+- It pipes the raw message to the capture binary through `proc_open` with an argv
+  array (no shell). `wp_mail()` returns true when the binary exits 0, after
+  `wp_mail_succeeded`; otherwise it fires `wp_mail_failed` with a `WP_Error` and
+  returns false.
+
+It's on in the `dev` runtime and wherever the capture binary exists, since WP-CLI
+and cron on a dev host don't see the FPM pool's environment and resolve to `lambda`.
+In production neither holds and it does nothing. A filter that runs earlier and
+returns a value is passed through.
+
 ## Release artifact
 
 Each release `vX.Y.Z` on GitHub has two assets:
@@ -72,8 +96,9 @@ version may differ.
 `tests/integration/wordpress.sh [artifact]` installs the artifact (or a fresh build)
 into a pinned WordPress against a MySQL server and checks that it loads with no
 `YMIR_*` or `AWS_*` variables, as `dev` (no fork, uploads served from disk) and with
-`VECTOR_RUNTIME` unset (`lambda`). See the script for its settings; CI runs it against
-MySQL 8.4.
+`VECTOR_RUNTIME` unset (`lambda`), and that `dev` captures `wp_mail()` through a
+stand-in capture binary even with SMTP configured. See the script for its settings;
+CI runs it against MySQL 8.4.
 
 ### Cutting a release
 

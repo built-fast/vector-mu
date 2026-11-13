@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Modules\DevMailCapture;
 use VectorMU\Modules\LoopbackHeader;
 use VectorMU\Modules\VendorPlugins;
 use VectorMU\Modules\YmirConflictGuard;
 
 final class Plugin {
 
-	public const VERSION = '0.2.1';
+	public const VERSION = '0.3.0';
 
 	private static bool $booted = false;
 
@@ -20,6 +21,7 @@ final class Plugin {
 		YmirConflictGuard::class,
 		VendorPlugins::class,
 		LoopbackHeader::class,
+		DevMailCapture::class,
 	];
 
 	public static function boot(): void {
