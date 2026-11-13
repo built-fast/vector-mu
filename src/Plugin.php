@@ -11,7 +11,7 @@ use VectorMU\Modules\YmirConflictGuard;
 
 final class Plugin {
 
-	public const VERSION = '0.1.0';
+	public const VERSION = '0.2.1';
 
 	private static bool $booted = false;
 
