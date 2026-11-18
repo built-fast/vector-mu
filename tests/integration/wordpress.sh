@@ -326,12 +326,13 @@ wp plugin activate vector-mu-test-wall --quiet
 # response headers go to $WORK_DIR/build.headers.
 build_request() {
 	local method="$1" url_path="$2" status
-	local -a args=(-X "$method")
-	if [[ "$method" == "HEAD" ]]; then
-		args=(-I)
-	fi
 	: >"$WORK_DIR/build.body"
-	status="$(curl -s "${args[@]}" -D "$WORK_DIR/build.headers" -o "$WORK_DIR/build.body" -w '%{http_code}' "$SITE_URL$url_path")"
+	if [[ "$method" == "HEAD" ]]; then
+		# curl -I writes the headers to -o too; a HEAD response has no body.
+		status="$(curl -s -I -D "$WORK_DIR/build.headers" -o /dev/null -w '%{http_code}' "$SITE_URL$url_path")"
+	else
+		status="$(curl -s -X "$method" -D "$WORK_DIR/build.headers" -o "$WORK_DIR/build.body" -w '%{http_code}' "$SITE_URL$url_path")"
+	fi
 	printf '%s %s' "$status" "$(cat "$WORK_DIR/build.body")"
 }
 
@@ -357,7 +358,7 @@ check_eq "build: GET with a cache-busting query returns the build ID" \
 	"$(build_request GET "/__vector/build?vector_check=$RANDOM$RANDOM")" "200 {\"build_id\":\"$BUILD_ID\"}"
 check_header "build: Cache-Control is no-store" '^cache-control: no-store, no-cache, must-revalidate, max-age=0, private$'
 check_header "build: Content-Type is JSON" '^content-type: application/json'
-check_eq "build: HEAD has no body" "$(build_request HEAD /__vector/build)" "200 "
+check_eq "build: HEAD is 200" "$(build_request HEAD /__vector/build)" "200 "
 check_eq "build: POST is 405" "$(build_request POST /__vector/build)" '405 {"build_id":null}'
 check_header "build: 405 sends Allow" '^allow: GET, HEAD$'
 check_eq "build: a trailing slash is left to WordPress" "$(build_request GET /__vector/build/)" "302 "
