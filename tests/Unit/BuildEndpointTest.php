@@ -96,7 +96,7 @@ it( 'answers 404 and logs when the build file is unreadable', function (): void 
 	}
 
 	expect( ( new BuildEndpoint( Runtime::LAMBDA, $this->file ) )->respond( 'GET', '/__vector/build' )['status'] ?? null )->toBe( 404 )
-		->and( ( $this->log )() )->toContain( 'Vector health check could not read vector-build.php' );
+		->and( ( $this->log )() )->toContain( 'Vector MU: could not read vector-build.php' );
 } );
 
 it( 'answers 404 and logs for an invalid build file', function ( string $contents ): void {
@@ -106,7 +106,7 @@ it( 'answers 404 and logs for an invalid build file', function ( string $content
 		'status'  => 404,
 		'headers' => BUILD_HEADERS,
 		'body'    => '{"build_id":null}',
-	] )->and( ( $this->log )() )->toContain( 'Vector health check ignored vector-build.php: it did not return a valid build ID' );
+	] )->and( ( $this->log )() )->toContain( 'Vector MU: ignored vector-build.php: it did not return a valid build ID' );
 } )->with( [
 	'not an array'           => "<?php return '" . BUILD_ID . "';",
 	'no build_id'            => "<?php return ['id' => '" . BUILD_ID . "'];",
@@ -123,7 +123,7 @@ it( 'answers 404 and logs without the contents when the build file fails to load
 	file_put_contents( $this->file, "<?php return ['build_id' => 'secret-content'" );
 
 	expect( ( new BuildEndpoint( Runtime::LAMBDA, $this->file ) )->respond( 'GET', '/__vector/build' )['status'] ?? null )->toBe( 404 )
-		->and( ( $this->log )() )->toContain( 'Vector health check could not load vector-build.php' )
+		->and( ( $this->log )() )->toContain( 'Vector MU: could not load vector-build.php' )
 		->and( ( $this->log )() )->not->toContain( 'secret-content' );
 } );
 

@@ -116,7 +116,7 @@ final class BuildEndpoint implements ModuleInterface {
 		}
 
 		if ( ! is_readable( $path ) ) {
-			self::log( 'Vector health check could not read vector-build.php' );
+			self::log( 'Vector MU: could not read vector-build.php' );
 
 			return null;
 		}
@@ -129,7 +129,7 @@ final class BuildEndpoint implements ModuleInterface {
 			$build = ( static fn ( string $file ): mixed => include $file )( $path );
 		} catch ( Throwable ) {
 			// The exception's message can quote the file, so it isn't logged.
-			self::log( 'Vector health check could not load vector-build.php' );
+			self::log( 'Vector MU: could not load vector-build.php' );
 
 			return null;
 		} finally {
@@ -140,7 +140,7 @@ final class BuildEndpoint implements ModuleInterface {
 
 		if ( ! is_array( $build ) || ! isset( $build['build_id'] ) || ! is_string( $build['build_id'] )
 			|| 1 !== preg_match( self::BUILD_ID_PATTERN, $build['build_id'] ) ) {
-			self::log( 'Vector health check ignored vector-build.php: it did not return a valid build ID' );
+			self::log( 'Vector MU: ignored vector-build.php: it did not return a valid build ID' );
 
 			return null;
 		}

@@ -347,7 +347,7 @@ check_eq "build: a trailing slash is left to WordPress" "$(build_request GET /__
 
 printf "<?php return ['build_id' => 'not-a-ulid'];" >"$WP_DIR/vector-build.php"
 check_eq "build: 404 for an invalid build ID" "$(build_request GET /__vector/build)" '404 {"build_id":null}'
-if grep -q 'Vector health check ignored vector-build.php' "$WORK_DIR/php-errors.log"; then
+if grep -q 'Vector MU: ignored vector-build.php' "$WORK_DIR/php-errors.log"; then
 	pass "build: the invalid file is logged"
 else
 	fail "build: the invalid file was not logged"
