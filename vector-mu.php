@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Vector MU
  * Description: Must-use plugin for the Vector hosting platform.
- * Version: 0.4.0
+ * Version: 0.5.0
  * Requires PHP: 8.2
  * Author: Vector
  * License: GPL-3.0-or-later

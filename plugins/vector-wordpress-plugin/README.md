@@ -52,7 +52,7 @@ hooks, the `$ymir` global, the `ymir/v1` REST namespace and the `ymir-public://`
   called: `wp_mail()` returns false and fires `wp_mail_failed`. The value is never
   included in the error. The existing `EmailTest` was updated for this, and
   `SesConfigurationSetTest` and `PluggableWpMailTest` were added.
-- Version set to `1.29.0-vector.2`.
+- Version set to `1.29.0-vector.3`.
 - `.php-cs-fixer.dist.php` no longer enforces the upstream file header, so modified
   files can carry a "Modified by Vector" notice.
 - Removed upstream release tooling (`.github/`, release-please config).

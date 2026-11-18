@@ -22,6 +22,10 @@
 #   when the binary fails, wp_mail() fires wp_mail_failed and returns false. A
 #   test mu-plugin points the module at the stand-in, since the real binary's
 #   path is fixed.
+# - Build endpoint: with VECTOR_RUNTIME unset, GET /__vector/build returns
+#   vector-build.php's build ID (404 without a valid one) with no-store, even
+#   with a plugin that redirects every request; HEAD has no body and POST is
+#   405. With VECTOR_RUNTIME=dev the path is left to WordPress.
 # - Production mail: with VECTOR_RUNTIME unset and no
 #   VECTOR_SES_CONFIGURATION_SET, the fork's wp_mail() refuses the send before
 #   calling SES.
@@ -88,14 +92,27 @@ sha256() {
 	fi
 }
 
-# Runs a command with a minimal environment: no YMIR_* or AWS_* variables,
-# and VECTOR_RUNTIME only when $RUNTIME is set.
-clean_env() {
-	local -a vars=("PATH=$PATH" "HOME=$WORK_DIR" "WP_CLI_DISABLE_AUTO_CHECK_UPDATE=1")
+# Sets CLEAN_ENV to a minimal environment: no YMIR_* or AWS_* variables, and
+# VECTOR_RUNTIME only when $RUNTIME is set.
+set_clean_env() {
+	CLEAN_ENV=("PATH=$PATH" "HOME=$WORK_DIR" "WP_CLI_DISABLE_AUTO_CHECK_UPDATE=1")
 	if [[ -n "${RUNTIME+x}" ]]; then
-		vars+=("VECTOR_RUNTIME=$RUNTIME")
+		CLEAN_ENV+=("VECTOR_RUNTIME=$RUNTIME")
 	fi
-	env -i "${vars[@]}" "$@"
+}
+
+# Runs a command with the minimal environment.
+clean_env() {
+	set_clean_env
+	env -i "${CLEAN_ENV[@]}" "$@"
+}
+
+# clean_env for a backgrounded command: a backgrounded function runs in a
+# subshell, and exec replaces that subshell, so $! is the command's own PID
+# and stop_server's kill reaches it.
+exec_clean_env() {
+	set_clean_env
+	exec env -i "${CLEAN_ENV[@]}" "$@"
 }
 
 # PHP notices go to stderr so they can't mix into captured output, and WP-CLI's
@@ -106,7 +123,11 @@ wp() {
 
 start_server() {
 	: >"$WORK_DIR/php-errors.log"
-	clean_env php \
+	# A server left over from an earlier section would answer in its place.
+	if curl -s -o /dev/null "$SITE_URL/wp-includes/images/blank.gif"; then
+		die "something already answers on $SITE_URL"
+	fi
+	exec_clean_env php \
 		-d display_errors=0 \
 		-d log_errors=1 \
 		-d error_log="$WORK_DIR/php-errors.log" \
@@ -281,6 +302,91 @@ check_eq "unset: vector-mu boots as lambda with the fork" "$(wp eval "$BOOT_PROB
 start_server
 check_homepage "unset"
 stop_server
+
+# --- Build endpoint ----------------------------------------------------------
+
+# A plugin that redirects every web request to the login page, standing in for
+# a login wall or maintenance plugin. vector-mu answers before it loads.
+mkdir -p "$WP_DIR/wp-content/plugins/vector-mu-test-wall"
+cat >"$WP_DIR/wp-content/plugins/vector-mu-test-wall/vector-mu-test-wall.php" <<'EOF'
+<?php
+/*
+Plugin Name: vector-mu test wall
+*/
+add_action( 'plugins_loaded', static function () {
+	if ( ! defined( 'WP_CLI' ) ) {
+		wp_redirect( wp_login_url(), 302 );
+		exit;
+	}
+} );
+EOF
+wp plugin activate vector-mu-test-wall --quiet
+
+# Requests $SITE_URL$2 with method $1 and prints "<status> <body>"; the
+# response headers go to $WORK_DIR/build.headers.
+build_request() {
+	local method="$1" url_path="$2" status
+	: >"$WORK_DIR/build.body"
+	if [[ "$method" == "HEAD" ]]; then
+		# curl -I writes the headers to -o too; a HEAD response has no body.
+		status="$(curl -s -I -D "$WORK_DIR/build.headers" -o /dev/null -w '%{http_code}' "$SITE_URL$url_path")"
+	else
+		status="$(curl -s -X "$method" -D "$WORK_DIR/build.headers" -o "$WORK_DIR/build.body" -w '%{http_code}' "$SITE_URL$url_path")"
+	fi
+	printf '%s %s' "$status" "$(cat "$WORK_DIR/build.body")"
+}
+
+check_header() {
+	local label="$1" pattern="$2"
+	if tr -d '\r' <"$WORK_DIR/build.headers" | grep -Eiq "$pattern"; then
+		pass "$label"
+	else
+		fail "$label: no header matching '$pattern'"
+		cat "$WORK_DIR/build.headers" >&2
+	fi
+}
+
+BUILD_ID="01JD3V7Q8M2X4Y6Z9ABCDEFGHK"
+
+start_server
+check_eq "build: the wall redirects the homepage" "$(build_request GET /)" "302 "
+check_eq "build: 404 without vector-build.php" "$(build_request GET /__vector/build)" '404 {"build_id":null}'
+
+printf "<?php return ['build_id' => '%s'];" "$BUILD_ID" >"$WP_DIR/vector-build.php"
+chmod 0640 "$WP_DIR/vector-build.php"
+check_eq "build: GET with a cache-busting query returns the build ID" \
+	"$(build_request GET "/__vector/build?vector_check=$RANDOM$RANDOM")" "200 {\"build_id\":\"$BUILD_ID\"}"
+check_header "build: Cache-Control is no-store" '^cache-control: no-store, no-cache, must-revalidate, max-age=0, private$'
+check_header "build: Content-Type is JSON" '^content-type: application/json'
+check_eq "build: HEAD is 200" "$(build_request HEAD /__vector/build)" "200 "
+check_eq "build: POST is 405" "$(build_request POST /__vector/build)" '405 {"build_id":null}'
+check_header "build: 405 sends Allow" '^allow: GET, HEAD$'
+check_eq "build: a trailing slash is left to WordPress" "$(build_request GET /__vector/build/)" "302 "
+
+printf "<?php return ['build_id' => 'not-a-ulid'];" >"$WP_DIR/vector-build.php"
+check_eq "build: 404 for an invalid build ID" "$(build_request GET /__vector/build)" '404 {"build_id":null}'
+if grep -q 'Vector MU: ignored vector-build.php' "$WORK_DIR/php-errors.log"; then
+	pass "build: the invalid file is logged"
+else
+	fail "build: the invalid file was not logged"
+fi
+if grep -Eiq 'PHP (Warning|Fatal error|Parse error)' "$WORK_DIR/php-errors.log"; then
+	fail "build: PHP warnings or fatals"
+	cat "$WORK_DIR/php-errors.log" >&2
+else
+	pass "build: no PHP warnings or fatals"
+fi
+stop_server
+
+printf "<?php return ['build_id' => '%s'];" "$BUILD_ID" >"$WP_DIR/vector-build.php"
+RUNTIME=dev
+start_server
+check_eq "build: dev leaves the path to WordPress" "$(build_request GET /__vector/build)" "302 "
+stop_server
+unset RUNTIME
+
+wp plugin deactivate vector-mu-test-wall --quiet
+rm -rf "$WP_DIR/wp-content/plugins/vector-mu-test-wall" "$WP_DIR/vector-build.php"
 
 # --- Unknown VECTOR_RUNTIME --------------------------------------------------
 
