@@ -66,14 +66,38 @@ or invalid, the fork doesn't call SES: `wp_mail()` fires `wp_mail_failed` with a
 Send limits, the escape hatch to the site's own mailer, and SES readiness checks
 are deferred.
 
-### Build ID
+### Build endpoint
 
-Vector's deploy also writes `vector-build.php` next to `wp-config.php` (WordPress's
-`ABSPATH`) in the production image, containing `<?php return ['build_id' => '<ULID>'];`.
-The bundled fork's private `/ymir/health` endpoint adds that value to its response,
-`{"status": "up", "build_id": "<ULID>"}`, so Vector's post-deploy check can tell the new
-build is the one answering. `build_id` is `null` when the file is missing (as on dev
-hosts) or isn't valid. The response is sent with `Cache-Control: no-store`.
+Vector's deploy writes `vector-build.php` at the WordPress root (`ABSPATH`, next to
+`wp-config.php`) of the production image, containing
+`<?php return ['build_id' => '<ULID>'];`, and its post-deploy check requests
+`GET /__vector/build?vector_check=<random>` to prove the new build is the one
+answering. The `BuildEndpoint` module answers it:
+
+| Request | Response |
+| --- | --- |
+| `GET` with a valid build file | `200` `{"build_id":"<ULID>"}` |
+| `GET` without one | `404` `{"build_id":null}` |
+| `HEAD` | the same status and headers, no body |
+| any other method | `405` `{"build_id":null}`, with `Allow: GET, HEAD` |
+
+Every response has `Cache-Control: no-store, no-cache, must-revalidate, max-age=0,
+private` and `Content-Type: application/json`. Only the path is matched, exactly: the
+query string is ignored, and `/__vector/build/` or `/blog/__vector/build` are left to
+WordPress. The build ID is valid when the file returns an array whose `build_id`
+matches `^[0-9A-HJKMNP-TV-Z]{26}$`. The file is included in an isolated scope with its
+output discarded; a file that's unreadable, fails to load, or doesn't hold a valid ID
+gives a `404` and one error log line, never the file's contents. A missing file (as on
+dev hosts) isn't logged.
+
+It's on only in the `lambda` runtime. It answers while vector-mu loads, as its first
+module and before any WordPress hook, so regular plugins, the theme, redirects, login
+walls, and maintenance plugins never run for it. What runs before vector-mu still
+applies: Ymir's runtime (including its maintenance mode), WordPress's bootstrap up to
+must-use plugins (`wp-config.php`, the database connection and the installed check,
+`advanced-cache.php`/`object-cache.php` drop-ins), and any must-use plugin whose file
+sorts before `vector-mu.php`. In `dev` the path is left to WordPress; on dev hosts nginx
+sends `/__vector/` to the access gate anyway.
 
 ## Loopback header
 

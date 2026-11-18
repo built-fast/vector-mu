@@ -6,7 +6,6 @@ declare(strict_types=1);
  * This file is part of Ymir WordPress plugin.
  *
  * (c) Carl Alexander <support@ymirapp.com>
- * Modified by Vector (2026). See README.md for a summary of changes.
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -69,7 +68,7 @@ class EventManagementConfiguration implements ContainerConfigurationInterface
             ];
 
             if ($container['ymir_health_enabled']) {
-                $subscribers[] = new Subscriber\HealthCheckSubscriber(ABSPATH.'vector-build.php');
+                $subscribers[] = new Subscriber\HealthCheckSubscriber();
             }
 
             if ($container['ymir_cdn_image_processing_enabled']) {

@@ -22,6 +22,10 @@
 #   when the binary fails, wp_mail() fires wp_mail_failed and returns false. A
 #   test mu-plugin points the module at the stand-in, since the real binary's
 #   path is fixed.
+# - Build endpoint: with VECTOR_RUNTIME unset, GET /__vector/build returns
+#   vector-build.php's build ID (404 without a valid one) with no-store, even
+#   with a plugin that redirects every request; HEAD has no body and POST is
+#   405. With VECTOR_RUNTIME=dev the path is left to WordPress.
 # - Production mail: with VECTOR_RUNTIME unset and no
 #   VECTOR_SES_CONFIGURATION_SET, the fork's wp_mail() refuses the send before
 #   calling SES.
@@ -281,6 +285,90 @@ check_eq "unset: vector-mu boots as lambda with the fork" "$(wp eval "$BOOT_PROB
 start_server
 check_homepage "unset"
 stop_server
+
+# --- Build endpoint ----------------------------------------------------------
+
+# A plugin that redirects every web request to the login page, standing in for
+# a login wall or maintenance plugin. vector-mu answers before it loads.
+mkdir -p "$WP_DIR/wp-content/plugins/vector-mu-test-wall"
+cat >"$WP_DIR/wp-content/plugins/vector-mu-test-wall/vector-mu-test-wall.php" <<'EOF'
+<?php
+/*
+Plugin Name: vector-mu test wall
+*/
+add_action( 'plugins_loaded', static function () {
+	if ( ! defined( 'WP_CLI' ) ) {
+		wp_redirect( wp_login_url(), 302 );
+		exit;
+	}
+} );
+EOF
+wp plugin activate vector-mu-test-wall --quiet
+
+# Requests $SITE_URL$2 with method $1 and prints "<status> <body>"; the
+# response headers go to $WORK_DIR/build.headers.
+build_request() {
+	local method="$1" url_path="$2" status
+	local -a args=(-X "$method")
+	if [[ "$method" == "HEAD" ]]; then
+		args=(-I)
+	fi
+	: >"$WORK_DIR/build.body"
+	status="$(curl -s "${args[@]}" -D "$WORK_DIR/build.headers" -o "$WORK_DIR/build.body" -w '%{http_code}' "$SITE_URL$url_path")"
+	printf '%s %s' "$status" "$(cat "$WORK_DIR/build.body")"
+}
+
+check_header() {
+	local label="$1" pattern="$2"
+	if tr -d '\r' <"$WORK_DIR/build.headers" | grep -Eiq "$pattern"; then
+		pass "$label"
+	else
+		fail "$label: no header matching '$pattern'"
+		cat "$WORK_DIR/build.headers" >&2
+	fi
+}
+
+BUILD_ID="01JD3V7Q8M2X4Y6Z9ABCDEFGHK"
+
+start_server
+check_eq "build: the wall redirects the homepage" "$(build_request GET /)" "302 "
+check_eq "build: 404 without vector-build.php" "$(build_request GET /__vector/build)" '404 {"build_id":null}'
+
+printf "<?php return ['build_id' => '%s'];" "$BUILD_ID" >"$WP_DIR/vector-build.php"
+chmod 0640 "$WP_DIR/vector-build.php"
+check_eq "build: GET with a cache-busting query returns the build ID" \
+	"$(build_request GET "/__vector/build?vector_check=$RANDOM$RANDOM")" "200 {\"build_id\":\"$BUILD_ID\"}"
+check_header "build: Cache-Control is no-store" '^cache-control: no-store, no-cache, must-revalidate, max-age=0, private$'
+check_header "build: Content-Type is JSON" '^content-type: application/json'
+check_eq "build: HEAD has no body" "$(build_request HEAD /__vector/build)" "200 "
+check_eq "build: POST is 405" "$(build_request POST /__vector/build)" '405 {"build_id":null}'
+check_header "build: 405 sends Allow" '^allow: GET, HEAD$'
+check_eq "build: a trailing slash is left to WordPress" "$(build_request GET /__vector/build/)" "302 "
+
+printf "<?php return ['build_id' => 'not-a-ulid'];" >"$WP_DIR/vector-build.php"
+check_eq "build: 404 for an invalid build ID" "$(build_request GET /__vector/build)" '404 {"build_id":null}'
+if grep -q 'Vector health check ignored vector-build.php' "$WORK_DIR/php-errors.log"; then
+	pass "build: the invalid file is logged"
+else
+	fail "build: the invalid file was not logged"
+fi
+if grep -Eiq 'PHP (Warning|Fatal error|Parse error)' "$WORK_DIR/php-errors.log"; then
+	fail "build: PHP warnings or fatals"
+	cat "$WORK_DIR/php-errors.log" >&2
+else
+	pass "build: no PHP warnings or fatals"
+fi
+stop_server
+
+printf "<?php return ['build_id' => '%s'];" "$BUILD_ID" >"$WP_DIR/vector-build.php"
+RUNTIME=dev
+start_server
+check_eq "build: dev leaves the path to WordPress" "$(build_request GET /__vector/build)" "302 "
+stop_server
+unset RUNTIME
+
+wp plugin deactivate vector-mu-test-wall --quiet
+rm -rf "$WP_DIR/wp-content/plugins/vector-mu-test-wall" "$WP_DIR/vector-build.php"
 
 # --- Unknown VECTOR_RUNTIME --------------------------------------------------
 

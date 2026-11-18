@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace VectorMU;
 
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Modules\BuildEndpoint;
 use VectorMU\Modules\DevMailCapture;
 use VectorMU\Modules\LoopbackHeader;
 use VectorMU\Modules\VendorPlugins;
@@ -18,6 +19,8 @@ final class Plugin {
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
+		// First, so it answers before any other module or site code runs.
+		BuildEndpoint::class,
 		YmirConflictGuard::class,
 		VendorPlugins::class,
 		LoopbackHeader::class,
