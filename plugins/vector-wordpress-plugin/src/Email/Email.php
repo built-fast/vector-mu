@@ -6,6 +6,7 @@ declare(strict_types=1);
  * This file is part of Ymir WordPress plugin.
  *
  * (c) Carl Alexander <support@ymirapp.com>
+ * Modified by Vector (2026). See README.md for a summary of changes.
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -215,9 +216,17 @@ class Email
 
         $this->eventManager->execute('phpmailer_init', $this->mailer);
 
+        // Vector: set the site's SES configuration set after every WordPress filter
+        // and action has run, replacing any the site supplied, or refuse the send.
+        SesConfigurationSet::apply($this->mailer);
+
         $this->mailer->preSend();
 
-        return $this->mailer->getSentMIMEMessage();
+        $message = $this->mailer->getSentMIMEMessage();
+
+        SesConfigurationSet::verify($message);
+
+        return $message;
     }
 
     /**
