@@ -92,14 +92,27 @@ sha256() {
 	fi
 }
 
-# Runs a command with a minimal environment: no YMIR_* or AWS_* variables,
-# and VECTOR_RUNTIME only when $RUNTIME is set.
-clean_env() {
-	local -a vars=("PATH=$PATH" "HOME=$WORK_DIR" "WP_CLI_DISABLE_AUTO_CHECK_UPDATE=1")
+# Sets CLEAN_ENV to a minimal environment: no YMIR_* or AWS_* variables, and
+# VECTOR_RUNTIME only when $RUNTIME is set.
+set_clean_env() {
+	CLEAN_ENV=("PATH=$PATH" "HOME=$WORK_DIR" "WP_CLI_DISABLE_AUTO_CHECK_UPDATE=1")
 	if [[ -n "${RUNTIME+x}" ]]; then
-		vars+=("VECTOR_RUNTIME=$RUNTIME")
+		CLEAN_ENV+=("VECTOR_RUNTIME=$RUNTIME")
 	fi
-	env -i "${vars[@]}" "$@"
+}
+
+# Runs a command with the minimal environment.
+clean_env() {
+	set_clean_env
+	env -i "${CLEAN_ENV[@]}" "$@"
+}
+
+# clean_env for a backgrounded command: a backgrounded function runs in a
+# subshell, and exec replaces that subshell, so $! is the command's own PID
+# and stop_server's kill reaches it.
+exec_clean_env() {
+	set_clean_env
+	exec env -i "${CLEAN_ENV[@]}" "$@"
 }
 
 # PHP notices go to stderr so they can't mix into captured output, and WP-CLI's
@@ -110,7 +123,11 @@ wp() {
 
 start_server() {
 	: >"$WORK_DIR/php-errors.log"
-	clean_env php \
+	# A server left over from an earlier section would answer in its place.
+	if curl -s -o /dev/null "$SITE_URL/wp-includes/images/blank.gif"; then
+		die "something already answers on $SITE_URL"
+	fi
+	exec_clean_env php \
 		-d display_errors=0 \
 		-d log_errors=1 \
 		-d error_log="$WORK_DIR/php-errors.log" \
