@@ -22,6 +22,9 @@
 #   when the binary fails, wp_mail() fires wp_mail_failed and returns false. A
 #   test mu-plugin points the module at the stand-in, since the real binary's
 #   path is fixed.
+# - Production mail: with VECTOR_RUNTIME unset and no
+#   VECTOR_SES_CONFIGURATION_SET, the fork's wp_mail() refuses the send before
+#   calling SES.
 #
 # Needs php (with mysqli), curl, a MySQL server, and what bin/build-release
 # needs when no artifact is given. Settings (environment):
@@ -376,6 +379,25 @@ unset RUNTIME
 check_eq "unset: mail capture only where the binary exists" \
 	"$(wp eval 'echo has_filter( "pre_wp_mail" ) ? "on" : "off";')" \
 	"$(if [[ -x /opt/vector/bin/vector-sendmail ]]; then echo on; else echo off; fi)"
+
+# --- Production mail without a configuration set ---------------------------
+
+# With VECTOR_RUNTIME unset the fork's SES wp_mail() is in place. Without
+# VECTOR_SES_CONFIGURATION_SET (clean_env never passes it) it refuses the send
+# before calling SES.
+LAMBDA_MAIL_PROBE='
+add_action( "wp_mail_failed", static function ( $error ) {
+	echo "wp_mail_failed: ", $error->get_error_message(), " ";
+} );
+var_export( wp_mail( "ada@example.com", "Production subject", "Production body", [ "From: Site <site@example.com>" ] ) );
+'
+result="$(wp eval "$LAMBDA_MAIL_PROBE")"
+case "$result" in
+"wp_mail_failed: Email not sent: the VECTOR_SES_CONFIGURATION_SET environment variable is missing or isn't a valid SES configuration set name false")
+	pass "unset: wp_mail() refuses without VECTOR_SES_CONFIGURATION_SET"
+	;;
+*) fail "unset: wp_mail() without VECTOR_SES_CONFIGURATION_SET gave '$result'" ;;
+esac
 
 if [[ "$FAILURES" -gt 0 ]]; then
 	die "$FAILURES check(s) failed"

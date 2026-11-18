@@ -15,7 +15,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Vector
  * Description: Integrates WordPress with the Vector platform. Fork of the Ymir WordPress plugin (https://github.com/ymirapp/wordpress-plugin).
- * Version: 1.29.0-vector.1
+ * Version: 1.29.0-vector.2
  * Requires at least: 5.9
  * Author: Vector
  * License: GPL3

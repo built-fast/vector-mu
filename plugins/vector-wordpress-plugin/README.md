@@ -43,7 +43,16 @@ hooks, the `$ymir` global, the `ymir/v1` REST namespace and the `ymir-public://`
   command sent to the console function and rejects non-JSON image editor history.
   Upstream wrapped request data (`history`, crop `context`) in single quotes without
   escaping, so a `'` could break out of the argument.
-- Version set to `1.29.0-vector.1`.
+- SES configuration set: `Email::toString()` calls the Vector-added
+  `Email\SesConfigurationSet` after `phpmailer_init`, when every WordPress filter and
+  action has run. It removes any `X-SES-CONFIGURATION-SET` header the site supplied
+  (case-insensitively) and adds one with the value of `VECTOR_SES_CONFIGURATION_SET`,
+  then checks that the raw message has exactly one. When the variable is missing or
+  isn't a valid name (`^[A-Za-z0-9_-]{1,64}$`), the send is refused before SES is
+  called: `wp_mail()` returns false and fires `wp_mail_failed`. The value is never
+  included in the error. The existing `EmailTest` was updated for this, and
+  `SesConfigurationSetTest` and `PluggableWpMailTest` were added.
+- Version set to `1.29.0-vector.2`.
 - `.php-cs-fixer.dist.php` no longer enforces the upstream file header, so modified
   files can carry a "Modified by Vector" notice.
 - Removed upstream release tooling (`.github/`, release-please config).

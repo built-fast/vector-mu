@@ -37,6 +37,35 @@ Unset means `lambda` because WP-CLI on a dev host doesn't see the site's FPM poo
 environment; without `YMIR_ENVIRONMENT` the fork stays inert there anyway. The Ymir
 conflict guard runs in both runtimes.
 
+## Production environment
+
+In production, Vector's deploy sets these on the site's Ymir environment. Ymir
+itself sets `YMIR_*` and `AWS_*`. The database, salts, `WP_HOME`, and `WP_SITEURL`
+part of the contract belongs to Vector's
+[ADR 0095](https://github.com/built-fast/vector/blob/main/docs/adrs/0095-wordpress-production-build-tree.md);
+this part belongs to
+[ADR 0097](https://github.com/built-fast/vector/blob/main/docs/adrs/0097-environment-contract-between-deploy-and-vector-mu.md).
+
+| Variable | Set by Vector's deploy | When missing or invalid |
+| --- | --- | --- |
+| `VECTOR_RUNTIME` | always, to `lambda` | unset or empty still resolves to `lambda` (see [Runtime](#runtime)) |
+| `VECTOR_SES_CONFIGURATION_SET` | always, to the site's SES configuration set | `wp_mail()` refuses every send |
+
+`VECTOR_SES_CONFIGURATION_SET` is read with `getenv` and is valid when it matches
+`^[A-Za-z0-9_-]{1,64}$` (SES's naming rules). It applies only where the bundled
+fork's `wp_mail()` sends through SES (`SendRawEmail`), that is, the `lambda`
+runtime; dev mail capture ignores it. After every WordPress filter and
+`phpmailer_init` have run, the fork removes any `X-SES-CONFIGURATION-SET` header the
+site supplied (through the headers argument, the `wp_mail` filter, or
+`phpmailer_init`; matched case-insensitively) and adds exactly one
+`X-SES-CONFIGURATION-SET: <name>`, so SES counts the site's sends, bounces, and
+complaints and the site can't drop or spoof it. When the variable is missing, empty,
+or invalid, the fork doesn't call SES: `wp_mail()` fires `wp_mail_failed` with a
+`WP_Error` whose message names the variable (never its value) and returns false.
+
+Send limits, the escape hatch to the site's own mailer, and SES readiness checks
+are deferred.
+
 ## Loopback header
 
 Dev sites sit behind an access gate. So the site's requests to itself (Site Health,
@@ -96,8 +125,9 @@ version may differ.
 `tests/integration/wordpress.sh [artifact]` installs the artifact (or a fresh build)
 into a pinned WordPress against a MySQL server and checks that it loads with no
 `YMIR_*` or `AWS_*` variables, as `dev` (no fork, uploads served from disk) and with
-`VECTOR_RUNTIME` unset (`lambda`), and that `dev` captures `wp_mail()` through a
-stand-in capture binary even with SMTP configured. See the script for its settings;
+`VECTOR_RUNTIME` unset (`lambda`), that `dev` captures `wp_mail()` through a
+stand-in capture binary even with SMTP configured, and that `lambda` refuses to send
+without `VECTOR_SES_CONFIGURATION_SET`. See the script for its settings;
 CI runs it against MySQL 8.4.
 
 ### Cutting a release

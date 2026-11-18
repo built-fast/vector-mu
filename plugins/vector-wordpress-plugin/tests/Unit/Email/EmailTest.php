@@ -6,6 +6,7 @@ declare(strict_types=1);
  * This file is part of Ymir WordPress plugin.
  *
  * (c) Carl Alexander <support@ymirapp.com>
+ * Modified by Vector (2026). See README.md for a summary of changes.
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,6 +15,7 @@ declare(strict_types=1);
 namespace Ymir\Plugin\Tests\Unit\Email;
 
 use Ymir\Plugin\Email\Email;
+use Ymir\Plugin\Email\SesConfigurationSet;
 use Ymir\Plugin\Tests\Mock\AttachmentFileManagerMockTrait;
 use Ymir\Plugin\Tests\Mock\EventManagerMockTrait;
 use Ymir\Plugin\Tests\Mock\PHPMailerMockTrait;
@@ -24,6 +26,14 @@ class EmailTest extends TestCase
     use AttachmentFileManagerMockTrait;
     use EventManagerMockTrait;
     use PHPMailerMockTrait;
+
+    /**
+     * {@inheritdoc}
+     */
+    protected function tearDown(): void
+    {
+        putenv(SesConfigurationSet::ENV);
+    }
 
     public function testAttachmentsCopiesUploadFilesToTmpDirectory(): void
     {
@@ -412,14 +422,24 @@ class EmailTest extends TestCase
                          [$this->identicalTo('wp_mail_from_name'), $this->identicalTo('WordPress')]
                      );
 
+        putenv(SesConfigurationSet::ENV.'=vector-site');
+
+        $phpmailer->expects($this->once())
+                  ->method('getCustomHeaders')
+                  ->willReturn([]);
+
+        $phpmailer->expects($this->once())
+                  ->method('addCustomHeader')
+                  ->with($this->identicalTo('X-SES-CONFIGURATION-SET'), $this->identicalTo('vector-site'));
+
         $phpmailer->expects($this->once())
                   ->method('preSend');
 
         $phpmailer->expects($this->once())
                   ->method('getSentMIMEMessage')
-                  ->willReturn('email');
+                  ->willReturn("X-SES-CONFIGURATION-SET: vector-site\r\n\r\nemail");
 
-        $this->assertSame('email', (new Email($eventManager, 'from_address', $this->getAttachmentFileManagerMock(), $phpmailer))->toString());
+        $this->assertSame("X-SES-CONFIGURATION-SET: vector-site\r\n\r\nemail", (new Email($eventManager, 'from_address', $this->getAttachmentFileManagerMock(), $phpmailer))->toString());
     }
 
     public function testToWithArray(): void
