@@ -6,6 +6,7 @@ declare(strict_types=1);
  * This file is part of Ymir WordPress plugin.
  *
  * (c) Carl Alexander <support@ymirapp.com>
+ * Modified by Vector (2026). See README.md for a summary of changes.
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -25,6 +26,25 @@ class HealthCheckSubscriberTest extends TestCase
     use FunctionMockTrait;
 
     /**
+     * A valid build ID.
+     */
+    private const BUILD_ID = '01JD3V7Q8M2X4Y6Z9ABCDEFGHK';
+
+    /**
+     * The temporary directory standing in for the WordPress root.
+     *
+     * @var string
+     */
+    private $buildDirectory;
+
+    /**
+     * The path of the build file in the temporary directory.
+     *
+     * @var string
+     */
+    private $buildFilePath;
+
+    /**
      * The server parameters before the test.
      *
      * @var array
@@ -42,8 +62,12 @@ class HealthCheckSubscriberTest extends TestCase
     {
         parent::setUp();
 
+        $this->buildDirectory = sys_get_temp_dir().'/vector-health-'.bin2hex(random_bytes(8));
+        mkdir($this->buildDirectory, 0700);
+        $this->buildFilePath = $this->buildDirectory.'/vector-build.php';
+
         $this->server = $_SERVER;
-        $this->subscriber = new HealthCheckSubscriber();
+        $this->subscriber = new HealthCheckSubscriber($this->buildFilePath);
 
         $_SERVER['REQUEST_METHOD'] = 'GET';
         $_SERVER['REQUEST_URI'] = '/ymir/health';
@@ -54,7 +78,28 @@ class HealthCheckSubscriberTest extends TestCase
     {
         $_SERVER = $this->server;
 
+        if (is_file($this->buildFilePath)) {
+            unlink($this->buildFilePath);
+        }
+
+        rmdir($this->buildDirectory);
+
         parent::tearDown();
+    }
+
+    public function provideInvalidBuildFiles(): array
+    {
+        return [
+            'not an array' => ["<?php return '".self::BUILD_ID."';"],
+            'no build_id' => ["<?php return ['id' => '".self::BUILD_ID."'];"],
+            'build_id not a string' => ['<?php return [\'build_id\' => 12345678901234567890123456];'],
+            'lowercase build_id' => ["<?php return ['build_id' => '".strtolower(self::BUILD_ID)."'];"],
+            'build_id with excluded letter' => ["<?php return ['build_id' => '01JD3V7Q8M2X4Y6Z9ABCDEFGHU'];"],
+            'build_id too short' => ["<?php return ['build_id' => '".substr(self::BUILD_ID, 1)."'];"],
+            'build_id with trailing newline' => ["<?php return ['build_id' => \"".self::BUILD_ID.'\\n"];'],
+            'no return' => ['<?php'],
+            'empty file' => [''],
+        ];
     }
 
     public function provideUnauthorizedServerParameters(): array
@@ -121,6 +166,31 @@ class HealthCheckSubscriberTest extends TestCase
         $this->mockHealthCheckRequest();
 
         $this->assertFalse($this->subscriber->preventCanonicalPathRedirectForHealthCheck('https://example.com/health-tips/', 'https://example.com/ymir/health'));
+    }
+
+    public function testRespondToHealthCheckDiscardsBuildFileOutput(): void
+    {
+        file_put_contents($this->buildFilePath, "stray output<?php echo 'more'; return ['build_id' => '".self::BUILD_ID."'];");
+
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => self::BUILD_ID]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->expectOutputString('');
+
+        $this->subscriber->respondToHealthCheck();
     }
 
     public function testRespondToHealthCheckDoesNothingBeforeWordPressIsSupplied(): void
@@ -214,6 +284,61 @@ class HealthCheckSubscriberTest extends TestCase
         $this->subscriber->respondToHealthCheck();
     }
 
+    public function testRespondToHealthCheckSendsBuildIdFromBuildFile(): void
+    {
+        file_put_contents($this->buildFilePath, "<?php return ['build_id' => '".self::BUILD_ID."'];");
+
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'error_log')
+             ->expects($this->never());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => self::BUILD_ID]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute')
+                     ->with($this->identicalTo('ymir_diagnosing_health'));
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
+    public function testRespondToHealthCheckSendsBuildIdWhenDiagnosticsFail(): void
+    {
+        file_put_contents($this->buildFilePath, "<?php return ['build_id' => '".self::BUILD_ID."'];");
+
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'error_log')
+             ->expects($this->once())
+             ->with($this->stringContains('Vector health check failed: RuntimeException: database'));
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'down', 'build_id' => self::BUILD_ID]), $this->identicalTo(500));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute')
+                     ->willThrowException(new \RuntimeException('database'));
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
     public function testRespondToHealthCheckSendsDownResponseWhenDiagnosticsFail(): void
     {
         $this->mockHealthCheckRequest();
@@ -225,9 +350,11 @@ class HealthCheckSubscriberTest extends TestCase
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
              ->expects($this->once());
 
+        $this->mockCacheControlHeader();
+
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
              ->expects($this->once())
-             ->with($this->identicalTo(['status' => 'down']), $this->identicalTo(500));
+             ->with($this->identicalTo(['status' => 'down', 'build_id' => null]), $this->identicalTo(500));
 
         $eventManager = $this->getEventManagerMock();
         $eventManager->expects($this->once())
@@ -251,14 +378,124 @@ class HealthCheckSubscriberTest extends TestCase
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
              ->expects($this->once());
 
+        $this->mockCacheControlHeader();
+
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
              ->expects($this->once())
-             ->with($this->identicalTo(['status' => 'down']), $this->identicalTo(500));
+             ->with($this->identicalTo(['status' => 'down', 'build_id' => null]), $this->identicalTo(500));
 
         $eventManager = $this->getEventManagerMock();
         $eventManager->expects($this->once())
                      ->method('execute')
                      ->willThrowException(new \Error('diagnostic error'));
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
+    /**
+     * @dataProvider provideInvalidBuildFiles
+     */
+    public function testRespondToHealthCheckSendsNullBuildIdForInvalidBuildFile(string $contents): void
+    {
+        file_put_contents($this->buildFilePath, $contents);
+
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'error_log')
+             ->expects($this->once())
+             ->with($this->identicalTo('Vector health check ignored vector-build.php: it did not return a valid build ID'));
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
+    public function testRespondToHealthCheckSendsNullBuildIdWhenBuildFileFailsToLoad(): void
+    {
+        file_put_contents($this->buildFilePath, "<?php return ['build_id' => 'secret-content'");
+
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'error_log')
+             ->expects($this->once())
+             ->with($this->identicalTo('Vector health check could not load vector-build.php'));
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
+    public function testRespondToHealthCheckSendsNullBuildIdWhenBuildFileIsADirectory(): void
+    {
+        mkdir($this->buildFilePath);
+
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
+
+        $this->subscriber->setEventManager($eventManager);
+
+        try {
+            $this->subscriber->respondToHealthCheck();
+        } finally {
+            rmdir($this->buildFilePath);
+        }
+    }
+
+    public function testRespondToHealthCheckSendsNullBuildIdWhenBuildFileIsMissing(): void
+    {
+        $this->mockHealthCheckRequest();
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'error_log')
+             ->expects($this->never());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
 
         $this->subscriber->setEventManager($eventManager);
 
@@ -272,9 +509,11 @@ class HealthCheckSubscriberTest extends TestCase
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
              ->expects($this->once());
 
+        $this->mockCacheControlHeader();
+
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
              ->expects($this->once())
-             ->with($this->identicalTo(['status' => 'up']), $this->identicalTo(200));
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
 
         $eventManager = $this->getEventManagerMock();
         $eventManager->expects($this->once())
@@ -297,14 +536,93 @@ class HealthCheckSubscriberTest extends TestCase
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
              ->expects($this->once());
 
+        $this->mockCacheControlHeader();
+
         $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
              ->expects($this->once())
-             ->with($this->identicalTo(['status' => 'up']), $this->identicalTo(200));
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
 
         $eventManager = $this->getEventManagerMock();
         $eventManager->expects($this->once())
                      ->method('execute')
                      ->with($this->identicalTo('ymir_diagnosing_health'));
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
+    public function testRespondToHealthCheckSendsUpResponseWithCacheBustingQuery(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/ymir/health?vector_check=3f9a2c';
+        $_GET['vector_check'] = '3f9a2c';
+
+        try {
+            $this->mockHealthCheckRequest();
+            $this->mockCacheControlHeader();
+
+            $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+                 ->expects($this->once());
+
+            $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+                 ->expects($this->once())
+                 ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
+
+            $eventManager = $this->getEventManagerMock();
+            $eventManager->expects($this->once())
+                         ->method('execute');
+
+            $this->subscriber->setEventManager($eventManager);
+
+            $this->subscriber->respondToHealthCheck();
+        } finally {
+            unset($_GET['vector_check']);
+        }
+    }
+
+    public function testRespondToHealthCheckSendsUpResponseWithCacheBustingQueryAndPlainPermalinks(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/ymir/health/?vector_check=3f9a2c';
+
+        $this->mockHealthCheckRequest(false, false);
+        $this->mockCacheControlHeader();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once())
+             ->with($this->identicalTo(['status' => 'up', 'build_id' => null]), $this->identicalTo(200));
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
+
+        $this->subscriber->setEventManager($eventManager);
+
+        $this->subscriber->respondToHealthCheck();
+    }
+
+    public function testRespondToHealthCheckSkipsCacheControlHeaderWhenHeadersAreSent(): void
+    {
+        $this->mockHealthCheckRequest();
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'nocache_headers')
+             ->expects($this->once());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'headers_sent')
+             ->expects($this->once())
+             ->willReturn(true);
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'header')
+             ->expects($this->never());
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'wp_send_json')
+             ->expects($this->once());
+
+        $eventManager = $this->getEventManagerMock();
+        $eventManager->expects($this->once())
+                     ->method('execute');
 
         $this->subscriber->setEventManager($eventManager);
 
@@ -326,6 +644,20 @@ class HealthCheckSubscriberTest extends TestCase
         $this->subscriber->setEventManager($eventManager);
 
         $this->subscriber->respondToHealthCheck();
+    }
+
+    /**
+     * Expect the health check response to send a Cache-Control header that forbids storing it.
+     */
+    private function mockCacheControlHeader(): void
+    {
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'headers_sent')
+             ->expects($this->once())
+             ->willReturn(false);
+
+        $this->getFunctionMock($this->getNamespace(HealthCheckSubscriber::class), 'header')
+             ->expects($this->once())
+             ->with($this->identicalTo('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private'));
     }
 
     /**

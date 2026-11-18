@@ -66,6 +66,15 @@ or invalid, the fork doesn't call SES: `wp_mail()` fires `wp_mail_failed` with a
 Send limits, the escape hatch to the site's own mailer, and SES readiness checks
 are deferred.
 
+### Build ID
+
+Vector's deploy also writes `vector-build.php` next to `wp-config.php` (WordPress's
+`ABSPATH`) in the production image, containing `<?php return ['build_id' => '<ULID>'];`.
+The bundled fork's private `/ymir/health` endpoint adds that value to its response,
+`{"status": "up", "build_id": "<ULID>"}`, so Vector's post-deploy check can tell the new
+build is the one answering. `build_id` is `null` when the file is missing (as on dev
+hosts) or isn't valid. The response is sent with `Cache-Control: no-store`.
+
 ## Loopback header
 
 Dev sites sit behind an access gate. So the site's requests to itself (Site Health,

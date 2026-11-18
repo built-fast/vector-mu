@@ -52,7 +52,19 @@ hooks, the `$ymir` global, the `ymir/v1` REST namespace and the `ymir-public://`
   called: `wp_mail()` returns false and fires `wp_mail_failed`. The value is never
   included in the error. The existing `EmailTest` was updated for this, and
   `SesConfigurationSetTest` and `PluggableWpMailTest` were added.
-- Version set to `1.29.0-vector.2`.
+- Health check build ID: `HealthCheckSubscriber`'s `/ymir/health` response is
+  `{"status": "up"|"down", "build_id": <string|null>}`. `build_id` comes from
+  `vector-build.php` at `ABSPATH`, which Vector's deploy writes into the production
+  image as `<?php return ['build_id' => '<ULID>'];`. It's `null` when the file is
+  missing (dev hosts), unreadable, fails to load, or doesn't return an array whose
+  `build_id` matches `^[0-9A-HJKMNP-TV-Z]{26}$`; the last three write a line to the
+  error log without the file's contents. The file is included in an isolated scope
+  and any output it makes is discarded. The response also sends
+  `Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private` itself, so
+  the `nocache_headers` filter can't make it cacheable. Who may trigger the endpoint
+  and its status codes are unchanged; a query string doesn't affect matching the path.
+  `EventManagementConfiguration` passes the file's path.
+- Version set to `1.29.0-vector.3`.
 - `.php-cs-fixer.dist.php` no longer enforces the upstream file header, so modified
   files can carry a "Modified by Vector" notice.
 - Removed upstream release tooling (`.github/`, release-please config).
