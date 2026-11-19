@@ -13,8 +13,10 @@
 #   homepage returns 200 with no PHP warnings or fatals, and an imported upload
 #   has a local URL and is served from disk.
 # - VECTOR_RUNTIME unset: vector-mu boots as lambda, the fork loads (inert
-#   without YMIR_ENVIRONMENT), and the homepage returns 200 with no warnings or
-#   fatals.
+#   without YMIR_ENVIRONMENT). Without the preview gate's variables the gate
+#   fails closed: the homepage is the 401 private page and the log names the
+#   variables. With them and 127.0.0.1 in VECTOR_PUBLIC_HOSTS, the homepage
+#   returns 200 with no warnings or fatals.
 # - VECTOR_RUNTIME set to an unknown value: logged, and treated as dev.
 # - Dev mail capture: with VECTOR_RUNTIME=dev and SMTP configured in
 #   phpmailer_init, as a mailer plugin does, wp_mail() pipes the whole message
@@ -26,6 +28,10 @@
 #   vector-build.php's build ID (404 without a valid one) with no-store, even
 #   with a plugin that redirects every request; HEAD has no body and POST is
 #   405. With VECTOR_RUNTIME=dev the path is left to WordPress.
+# - Preview gate: with 127.0.0.1 as the preview hostname and Vector Control
+#   unreachable (a cold container), a page is the 401 private page with
+#   noindex and no-store, a cookie can't get in, /__vector/build still answers
+#   (with noindex), and the loopback secret gets through to WordPress.
 # - Production mail: with VECTOR_RUNTIME unset and no
 #   VECTOR_SES_CONFIGURATION_SET, the fork's wp_mail() refuses the send before
 #   calling SES.
@@ -61,6 +67,14 @@ WORK_DIR="$(cd "$(mktemp -d)" && pwd -P)"
 WP_DIR="$WORK_DIR/wordpress"
 WP_CLI="$WORK_DIR/wp-cli.phar"
 SERVER_PID=""
+# Extra variables for clean_env: the preview gate's, when set.
+GATE_ENV=()
+GATE_SECRETS=(
+	"VECTOR_GATE_DOCUMENT_URL=https://control.invalid/api/v1/gate/previews/01JD3V7Q8M2X4Y6Z9ABCDEFGHK"
+	"VECTOR_GATE_DOCUMENT_TOKEN=3Sbj1NMLfeNNH_HKBee_FbUUViRBsawucl6GW--K__w"
+	"VECTOR_GATE_COOKIE_SECRET=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+	"VECTOR_LOOPBACK_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)
 
 cleanup() {
 	stop_server
@@ -92,13 +106,14 @@ sha256() {
 	fi
 }
 
-# Sets CLEAN_ENV to a minimal environment: no YMIR_* or AWS_* variables, and
-# VECTOR_RUNTIME only when $RUNTIME is set.
+# Sets CLEAN_ENV to a minimal environment: no YMIR_* or AWS_* variables,
+# VECTOR_RUNTIME only when $RUNTIME is set, and $GATE_ENV.
 set_clean_env() {
 	CLEAN_ENV=("PATH=$PATH" "HOME=$WORK_DIR" "WP_CLI_DISABLE_AUTO_CHECK_UPDATE=1")
 	if [[ -n "${RUNTIME+x}" ]]; then
 		CLEAN_ENV+=("VECTOR_RUNTIME=$RUNTIME")
 	fi
+	CLEAN_ENV+=(${GATE_ENV[@]+"${GATE_ENV[@]}"})
 }
 
 # Runs a command with the minimal environment.
@@ -299,6 +314,25 @@ stop_server
 unset RUNTIME
 check_eq "unset: vector-mu boots as lambda with the fork" "$(wp eval "$BOOT_PROBE")" "lambda fork-loaded"
 
+# Without the preview gate's variables the gate refuses every request.
+start_server
+status="$(curl -s -o "$WORK_DIR/home.html" -w '%{http_code}' "$SITE_URL/")"
+check_eq "unset: without the gate's variables the homepage is refused" "$status" "401"
+if grep -q 'This preview site is private' "$WORK_DIR/home.html"; then
+	pass "unset: the refusal is the private page"
+else
+	fail "unset: the refusal is not the private page"
+fi
+if grep -q 'Vector MU: preview gate refused a request: VECTOR_PREVIEW_HOST, VECTOR_GATE_DOCUMENT_URL, VECTOR_GATE_DOCUMENT_TOKEN, VECTOR_GATE_COOKIE_SECRET, VECTOR_LOOPBACK_SECRET missing or invalid' "$WORK_DIR/php-errors.log"; then
+	pass "unset: the missing variables are logged"
+else
+	fail "unset: the missing variables were not logged"
+	cat "$WORK_DIR/php-errors.log" >&2
+fi
+stop_server
+
+# With them, and 127.0.0.1 as a public host, nothing is gated.
+GATE_ENV=("VECTOR_PREVIEW_HOST=preview.example.test" "VECTOR_PUBLIC_HOSTS=127.0.0.1" "${GATE_SECRETS[@]}")
 start_server
 check_homepage "unset"
 stop_server
@@ -379,6 +413,46 @@ fi
 stop_server
 
 printf "<?php return ['build_id' => '%s'];" "$BUILD_ID" >"$WP_DIR/vector-build.php"
+
+# --- Preview gate ------------------------------------------------------------
+
+# 127.0.0.1 is the preview hostname and no host is public; control.invalid
+# never resolves, so the gate has no document, as in a cold container during
+# an outage.
+GATE_ENV=("VECTOR_PREVIEW_HOST=127.0.0.1" "${GATE_SECRETS[@]}")
+start_server
+check_eq "gate: a page is refused" "$(build_request GET / | cut -c1-4)" "401 "
+check_header "gate: the private page is noindex" '^x-robots-tag: noindex, nofollow$'
+check_header "gate: the private page is private, no-store" '^cache-control: private, no-store$'
+if grep -q 'This preview site is private' "$WORK_DIR/build.body"; then
+	pass "gate: the refusal is the private page"
+else
+	fail "gate: the refusal is not the private page"
+fi
+check_eq "gate: a cookie can't get in without a gate document" \
+	"$(curl -s -o /dev/null -w '%{http_code}' -H 'Cookie: __Host-vector_gate=v1.1.user.x.y' "$SITE_URL/")" "401"
+if grep -q 'Vector MU: preview gate: document fetch failed' "$WORK_DIR/php-errors.log"; then
+	pass "gate: the failed fetch is logged"
+else
+	fail "gate: the failed fetch was not logged"
+	cat "$WORK_DIR/php-errors.log" >&2
+fi
+check_eq "gate: another host (a vanity domain) is refused" \
+	"$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: my-site-abc123.ymirsite.com' "$SITE_URL/")" "401"
+check_eq "gate: the build endpoint is exempt" "$(build_request GET /__vector/build)" "200 {\"build_id\":\"$BUILD_ID\"}"
+check_header "gate: the build endpoint is noindex on the preview hostname" '^x-robots-tag: noindex, nofollow$'
+check_header "gate: the build endpoint is private, no-store on the preview hostname" '^cache-control: private, no-store$'
+check_eq "gate: the loopback secret gets through to WordPress (the wall)" \
+	"$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Vector-Loopback: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' "$SITE_URL/")" "302"
+if grep -Eiq 'PHP (Warning|Fatal error|Parse error)' "$WORK_DIR/php-errors.log"; then
+	fail "gate: PHP warnings or fatals"
+	cat "$WORK_DIR/php-errors.log" >&2
+else
+	pass "gate: no PHP warnings or fatals"
+fi
+stop_server
+GATE_ENV=("VECTOR_PREVIEW_HOST=preview.example.test" "VECTOR_PUBLIC_HOSTS=127.0.0.1" "${GATE_SECRETS[@]}")
+
 RUNTIME=dev
 start_server
 check_eq "build: dev leaves the path to WordPress" "$(build_request GET /__vector/build)" "302 "

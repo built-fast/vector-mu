@@ -4,23 +4,29 @@ declare(strict_types=1);
 
 namespace VectorMU\Modules;
 
+use Closure;
 use Stringable;
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Gate\Config;
+use VectorMU\Runtime;
 use VectorMU\Support\OpenBasedir;
 
 /**
- * Lets the site's own HTTP requests through a dev host's access gate.
+ * Lets the site's own HTTP requests through its access gate.
  *
- * Dev sites sit behind an auth gate, so the site's requests to itself (Site
+ * Dev sites sit behind an auth gate, and so do production preview hostnames, so the site's requests to itself (Site
  * Health's loopback check, cron spawning, async and REST self-calls) need to
  * prove they come from the site. The host keeps a per-site secret in
  * /etc/vector/sites/<user>/loopback, readable by the site's POSIX user, and
  * this module sends it as X-Vector-Loopback on WP HTTP API requests whose
  * host is the site's own (the host of home_url() or site_url()).
  *
- * It keys off the file rather than VECTOR_RUNTIME: WP-CLI and cron on a dev
- * host don't see the FPM pool's environment and resolve to lambda, but they
- * need the header too. Without the file (production) it does nothing.
+ * On a dev host the secret is in a file, and it keys off the file rather
+ * than VECTOR_RUNTIME: WP-CLI and cron on a dev host don't see the FPM
+ * pool's environment and resolve to lambda, but they need the header too.
+ * In the lambda runtime, VECTOR_LOOPBACK_SECRET is used
+ * instead whenever it's set; the file is read only when it isn't, as for
+ * WP-CLI on a dev host. An invalid variable means no header.
  *
  * The header is set as Requests sends the request, after the
  * http_request_args and pre_http_request filters, and removed before a
@@ -40,8 +46,15 @@ final class LoopbackHeader implements ModuleInterface {
 	/** The secret once read, or false when there is none. */
 	private string|false|null $secret = null;
 
+	/**
+	 * @param string                               $secretsDir Where the dev hosts' secret files are.
+	 * @param string|null                          $runtime    The runtime; null reads VECTOR_MU_RUNTIME.
+	 * @param Closure(string): (string|false)|null $env        Reads a variable; null uses getenv().
+	 */
 	public function __construct(
-		private readonly string $secretsDir = self::SECRETS_DIR
+		private readonly string $secretsDir = self::SECRETS_DIR,
+		private readonly ?string $runtime = null,
+		private readonly ?Closure $env = null
 	) {
 	}
 
@@ -94,8 +107,7 @@ final class LoopbackHeader implements ModuleInterface {
 	}
 
 	/**
-	 * The site's secret, or null when the file is missing, unreadable, or
-	 * malformed. Read at most once.
+	 * The site's secret, or null when there's no valid one. Read at most once.
 	 */
 	private function secret(): ?string {
 		if ( null === $this->secret ) {
@@ -106,6 +118,17 @@ final class LoopbackHeader implements ModuleInterface {
 	}
 
 	private function readSecret(): ?string {
+		$runtime = $this->runtime ?? ( defined( 'VECTOR_MU_RUNTIME' ) ? VECTOR_MU_RUNTIME : Runtime::DEV );
+
+		if ( Runtime::LAMBDA === $runtime ) {
+			$env = $this->env ?? static fn ( string $name ): string|false => getenv( $name );
+			$set = $env( Config::LOOPBACK_SECRET );
+
+			if ( is_string( $set ) && '' !== $set ) {
+				return Config::loopbackSecret( $env );
+			}
+		}
+
 		$user = self::effectiveUser();
 
 		if ( null === $user ) {

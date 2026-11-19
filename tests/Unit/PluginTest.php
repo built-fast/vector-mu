@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use VectorMU\Contracts\ModuleInterface;
+use VectorMU\Modules\PreviewGate;
 use VectorMU\Modules\VendorPlugins;
 use VectorMU\Plugin;
 
@@ -22,4 +23,10 @@ it( 'bundles plugins whose entry files exist', function (): void {
 	foreach ( array_keys( $plugins ) as $plugin ) {
 		expect( dirname( __DIR__, 2 ) . '/plugins/' . $plugin )->toBeFile();
 	}
+} );
+
+it( 'registers the preview gate first, so it runs before any other module', function (): void {
+	$modules = ( new ReflectionClass( Plugin::class ) )->getReflectionConstant( 'MODULES' )->getValue();
+
+	expect( $modules[0] )->toBe( PreviewGate::class );
 } );

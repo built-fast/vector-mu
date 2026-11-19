@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Brain\Monkey\Functions;
 use VectorMU\Modules\LoopbackHeader;
+use VectorMU\Runtime;
 
 const LOOPBACK_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
@@ -198,4 +199,58 @@ it( 'does not restore the header when a redirect chain comes back from another h
 	$module->beforeRequest( $back, $headers, $data, $type, $options );
 
 	expect( $headers )->toBe( [] );
+} );
+
+const LAMBDA_LOOPBACK_SECRET = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+/**
+ * A module in the given runtime that reads VECTOR_LOOPBACK_SECRET from $env.
+ *
+ * @param array<string, string> $env
+ */
+function loopbackWithEnv( string $dir, string $runtime, array $env ): LoopbackHeader {
+	return new LoopbackHeader( $dir, $runtime, static fn ( string $name ): string|false => $env[ $name ] ?? false );
+}
+
+it( 'uses VECTOR_LOOPBACK_SECRET in the lambda runtime, without the file', function (): void {
+	$module = loopbackWithEnv( $this->dir, Runtime::LAMBDA, [ 'VECTOR_LOOPBACK_SECRET' => LAMBDA_LOOPBACK_SECRET ] );
+
+	expect( loopbackHeaders( $module, 'https://example.test/wp-cron.php' ) )->toBe( [ 'Accept' => '*/*', LoopbackHeader::HEADER => LAMBDA_LOOPBACK_SECRET ] )
+		->and( loopbackHeaders( $module, 'https://api.wordpress.org/' ) )->toBe( [ 'Accept' => '*/*' ] );
+} );
+
+it( 'prefers VECTOR_LOOPBACK_SECRET to the file in the lambda runtime', function (): void {
+	( $this->writeSecret )( LOOPBACK_SECRET );
+
+	$module = loopbackWithEnv( $this->dir, Runtime::LAMBDA, [ 'VECTOR_LOOPBACK_SECRET' => LAMBDA_LOOPBACK_SECRET ] );
+
+	expect( loopbackHeaders( $module, 'https://example.test/' )[ LoopbackHeader::HEADER ] )->toBe( LAMBDA_LOOPBACK_SECRET );
+} );
+
+it( 'sends nothing for an invalid VECTOR_LOOPBACK_SECRET, even with the file', function ( string $value ): void {
+	( $this->writeSecret )( LOOPBACK_SECRET );
+
+	$module = loopbackWithEnv( $this->dir, Runtime::LAMBDA, [ 'VECTOR_LOOPBACK_SECRET' => $value ] );
+
+	expect( loopbackHeaders( $module, 'https://example.test/' ) )->toBe( [ 'Accept' => '*/*' ] );
+} )->with( [
+	'uppercase'        => strtoupper( LAMBDA_LOOPBACK_SECRET ),
+	'short'            => substr( LAMBDA_LOOPBACK_SECRET, 1 ),
+	'trailing newline' => LAMBDA_LOOPBACK_SECRET . "\n",
+] );
+
+it( 'falls back to the file in the lambda runtime without the variable', function (): void {
+	( $this->writeSecret )( LOOPBACK_SECRET );
+
+	$module = loopbackWithEnv( $this->dir, Runtime::LAMBDA, [] );
+
+	expect( loopbackHeaders( $module, 'https://example.test/' )[ LoopbackHeader::HEADER ] )->toBe( LOOPBACK_SECRET );
+} );
+
+it( 'ignores VECTOR_LOOPBACK_SECRET in the dev runtime', function (): void {
+	( $this->writeSecret )( LOOPBACK_SECRET );
+
+	$module = loopbackWithEnv( $this->dir, Runtime::DEV, [ 'VECTOR_LOOPBACK_SECRET' => LAMBDA_LOOPBACK_SECRET ] );
+
+	expect( loopbackHeaders( $module, 'https://example.test/' )[ LoopbackHeader::HEADER ] )->toBe( LOOPBACK_SECRET );
 } );
