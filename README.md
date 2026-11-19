@@ -40,16 +40,19 @@ conflict guard runs in both runtimes.
 ## Production environment
 
 In production, Vector's deploy sets these on the site's Ymir environment. Ymir
-itself sets `YMIR_*` and `AWS_*`. The database, salts, `WP_HOME`, and `WP_SITEURL`
-part of the contract belongs to Vector's
-[ADR 0095](https://github.com/built-fast/vector/blob/main/docs/adrs/0095-wordpress-production-build-tree.md);
-this part belongs to
-[ADR 0097](https://github.com/built-fast/vector/blob/main/docs/adrs/0097-environment-contract-between-deploy-and-vector-mu.md).
+itself sets `YMIR_*` and `AWS_*`. The database, salts, `WP_HOME`, and `WP_SITEURL` are
+set as WordPress expects; the variables below are vector-mu's part.
 
 | Variable | Set by Vector's deploy | When missing or invalid |
 | --- | --- | --- |
 | `VECTOR_RUNTIME` | always, to `lambda` | unset or empty still resolves to `lambda` (see [Runtime](#runtime)) |
 | `VECTOR_SES_CONFIGURATION_SET` | always, to the site's SES configuration set | `wp_mail()` refuses every send |
+| `VECTOR_PREVIEW_HOST` | always (a Ymir secret), to the preview hostname | the [preview gate](#preview-gate) refuses every request |
+| `VECTOR_GATE_DOCUMENT_URL` | always (a Ymir secret), to `https://<control domain>/api/v1/gate/previews/<site ID>` | as above |
+| `VECTOR_GATE_DOCUMENT_TOKEN` | always (a Ymir secret), 32 random bytes, unpadded base64url | as above |
+| `VECTOR_GATE_COOKIE_SECRET` | always (a Ymir secret), 32 random bytes, standard base64 | as above |
+| `VECTOR_LOOPBACK_SECRET` | always (a Ymir secret), 32 random bytes, lowercase hex | as above, and no loopback header |
+| `VECTOR_PUBLIC_HOSTS` | at go-live, to the site's live custom domains, comma-separated | missing or empty: every host is gated; invalid: logged, and every host is gated |
 
 `VECTOR_SES_CONFIGURATION_SET` is read with `getenv` and is valid when it matches
 `^[A-Za-z0-9_-]{1,64}$` (SES's naming rules). It applies only where the bundled
@@ -90,8 +93,8 @@ output discarded; a file that's unreadable, fails to load, or doesn't hold a val
 gives a `404` and one error log line, never the file's contents. A missing file (as on
 dev hosts) isn't logged.
 
-It's on only in the `lambda` runtime. It answers while vector-mu loads, as its first
-module and before any WordPress hook, so regular plugins, the theme, redirects, login
+It's on only in the `lambda` runtime. It answers while vector-mu loads, right after
+the preview gate (which exempts it) and before any WordPress hook, so regular plugins, the theme, redirects, login
 walls, and maintenance plugins never run for it. What runs before vector-mu still
 applies: Ymir's runtime (including its maintenance mode), WordPress's bootstrap up to
 must-use plugins (`wp-config.php`, the database connection and the installed check,
@@ -99,21 +102,93 @@ must-use plugins (`wp-config.php`, the database connection and the installed che
 sorts before `vector-mu.php`. In `dev` the path is left to WordPress; on dev hosts nginx
 sends `/__vector/` to the access gate anyway.
 
+### Preview gate
+
+A production site is private, like a dev site, everywhere but its live custom
+domains, and on Lambda nothing but CloudFront sits in front of PHP, so the
+`PreviewGate` module gates it itself,
+with the dev gate's own `vg1` tokens and `v1` cookie.
+It's on only in the `lambda` runtime, as vector-mu's first module.
+
+- Hosts in `VECTOR_PUBLIC_HOSTS`, a comma-separated list of lowercase DNS names
+  (no spaces) that Vector sets at go-live, are never gated and get none of the gate's
+  headers. Every other host is gated: the preview hostname (`<slug>.<sites
+  domain>`), Ymir's vanity domain, the CloudFront and API Gateway domains, and any
+  host a forged `X-Forwarded-Host` names (Ymir's runtime takes `HTTP_HOST` from
+  it). The request's host is its `Host`, lowercased with any port removed.
+- `VECTOR_PREVIEW_HOST` is always gated, even if the list names it. A missing or
+  empty list gates every host. A list with any invalid entry is logged (never its
+  value) and gates every host.
+- Tokens and cookies are bound to `VECTOR_PREVIEW_HOST`, so only there does the gate
+  sign in or accept a cookie. Any other gated host gets the private page, with no
+  redirect.
+- If any of the five gate variables is missing or invalid, it refuses every
+  non-exempt request on every gated host and logs which variables (never their
+  values). Public hosts stay public.
+- On the preview hostname, `GET /__vector/auth?t=<token>&r=<path>` verifies the token against the gate
+  document's keys and for the preview hostname, sets
+  `__Host-vector_gate=<value>; Path=/; Max-Age=<n>; HttpOnly; Secure; SameSite=Lax`
+  (at most 12 hours, never past the token's `exp`; the MAC key is derived from
+  `VECTOR_GATE_COOKIE_SECRET` and the document's `session_epoch`), and redirects
+  `303` to `r` when it's a safe relative path, `/` otherwise. A refused token, or a
+  share token whose link is revoked, gets the private page. Other methods get `405`.
+- Every other request there needs a valid cookie whose share link, if any, isn't in the
+  document's `revoked_share_links`. Otherwise it gets the private page: `401`, no
+  site content, with a link to the site in Vector Control
+  (`<control_url>/sites/<site ID>`). `/__vector/private` is that page.
+- Exempt, on every gated host: `GET`/`HEAD /__vector/build`, anything that isn't an HTTP request (Ymir's
+  console and cron run PHP's CLI), and a request whose `X-Vector-Loopback` equals
+  `VECTOR_LOOPBACK_SECRET` (compared in constant time).
+- Every response on a gated host, exempt or not, sends
+  `X-Robots-Tag: noindex, nofollow` and `Cache-Control: private, no-store`; for
+  pages WordPress serves they're sent again just before the response goes out, so a
+  plugin's own `Cache-Control` can't make CloudFront cache a preview page.
+
+The keys, the session epoch, and revoked share links come from the site's gate
+document, `GET <VECTOR_GATE_DOCUMENT_URL>` with
+`Authorization: Bearer <VECTOR_GATE_DOCUMENT_TOKEN>`, fetched with PHP's curl
+extension (not WordPress's HTTP API, whose filters could weaken it): HTTPS only,
+TLS verified, no redirects or proxy, a 3-second deadline, and a 64 KiB body cap.
+The document must have `version` 1, the URL's site ID as `site_id`, and
+`VECTOR_PREVIEW_HOST` as `host`, plus a valid `control_url`, `session_epoch`, 1 to 8
+`keys`, `revoked_share_links`, and an integer `ttl`; fields it doesn't know are
+ignored. Anything else is a failed fetch.
+
+- The document is cached in `<temp dir>/vector-mu-gate-<site id>.json` (0600,
+  written atomically), so a warm container's requests share it, and is fresh for
+  its `ttl` clamped to 30–300 seconds.
+- After that the next gated request refetches. If that fails, the last good document
+  is used until 1 hour after it was fetched; after that, or in a cold container with
+  no document, the gate refuses everyone. A failed fetch isn't retried for 10
+  seconds.
+- A request with no gate cookie never fetches.
+
+As for the build endpoint, what runs before vector-mu isn't gated: an
+`advanced-cache.php` drop-in that serves cached pages, or a must-use plugin whose file
+sorts before `vector-mu.php`, runs for every request first.
+
+Tokens, cookies, and secrets are never logged. The token and cookie code is tested
+against fixed test vectors
+(`tests/fixtures/gate-vectors.json`).
+
 ## Loopback header
 
-Dev sites sit behind an access gate. So the site's requests to itself (Site Health,
+Dev sites and preview hostnames sit behind an access gate. So the site's requests to itself (Site Health,
 cron spawning, async and REST self-calls) get through, the `LoopbackHeader` module
 sends `X-Vector-Loopback: <secret>` on WP HTTP API requests whose host is the site's
 own (the host of `home_url()` or `site_url()`, any scheme, case-insensitive), and on
 no others. The header is removed before a redirect to another host, and a redirect
 chain that has left the site's host never gets it back.
 
-The secret is read, at most once per request, from
+The secret is read at most once per request. In the `lambda` runtime it's
+`VECTOR_LOOPBACK_SECRET` whenever that's set; it must be 64 lowercase hex
+characters, or no header is sent. Otherwise it's read from
 `/etc/vector/sites/<user>/loopback`, where `<user>` is the effective POSIX user. It
-must be 64 lowercase hex characters (a trailing newline is fine). The module keys off
-this file rather than `VECTOR_RUNTIME`, since WP-CLI and cron on a dev host don't see
-the FPM pool's environment; where the file is missing, unreadable, or malformed, or
-the `posix` extension is unavailable, it does nothing. The secret is never logged.
+must be 64 lowercase hex characters (a trailing newline is fine). For the file the
+module keys off the file rather than `VECTOR_RUNTIME`, since WP-CLI and cron on a dev
+host don't see the FPM pool's environment and resolve to `lambda`; where the file is
+missing, unreadable, or malformed, or the `posix` extension is unavailable, it does
+nothing. The secret is never logged.
 
 ## Dev mail capture
 
@@ -159,8 +234,9 @@ version may differ.
 into a pinned WordPress against a MySQL server and checks that it loads with no
 `YMIR_*` or `AWS_*` variables, as `dev` (no fork, uploads served from disk) and with
 `VECTOR_RUNTIME` unset (`lambda`), that `dev` captures `wp_mail()` through a
-stand-in capture binary even with SMTP configured, and that `lambda` refuses to send
-without `VECTOR_SES_CONFIGURATION_SET`. See the script for its settings;
+stand-in capture binary even with SMTP configured, that `lambda` refuses to send
+without `VECTOR_SES_CONFIGURATION_SET`, and that the preview gate fails closed
+without its variables and in a cold container that can't reach Vector Control. See the script for its settings;
 CI runs it against MySQL 8.4.
 
 ### Cutting a release

@@ -8,18 +8,22 @@ use VectorMU\Contracts\ModuleInterface;
 use VectorMU\Modules\BuildEndpoint;
 use VectorMU\Modules\DevMailCapture;
 use VectorMU\Modules\LoopbackHeader;
+use VectorMU\Modules\PreviewGate;
 use VectorMU\Modules\VendorPlugins;
 use VectorMU\Modules\YmirConflictGuard;
 
 final class Plugin {
 
-	public const VERSION = '0.5.0';
+	public const VERSION = '0.6.0';
 
 	private static bool $booted = false;
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
-		// First, so it answers before any other module or site code runs.
+		// First, so the preview hostname is gated before any other module or
+		// site code runs. It exempts the build endpoint.
+		PreviewGate::class,
+		// Next, so it answers before any other module or site code runs.
 		BuildEndpoint::class,
 		YmirConflictGuard::class,
 		VendorPlugins::class,
