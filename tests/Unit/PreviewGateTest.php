@@ -361,6 +361,146 @@ it( 'fails closed on an invalid public list, without logging it', function ( str
 	'URL'              => 'www.example.com,https://example.com',
 ] );
 
+// --- After launch -------------------------------------------------------------
+
+it( 'redirects the preview hostname to WP_HOME\'s host after launch, keeping path and query', function ( string $uri, string $want ): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com,example.com';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+
+	$result = ( $this->request )( $uri, [ 'HTTP_COOKIE' => '__Host-vector_gate=' . GateVectors::cookie( 'user_epoch7' )['value'] ] );
+
+	expect( $result['gated'] )->toBeFalse()
+		->and( $result['response']['status'] )->toBe( 301 )
+		->and( $result['response']['body'] )->toBe( '' )
+		->and( gateHeaders( $result['response'] ) )->toBe( [
+			'X-Robots-Tag'           => 'noindex, nofollow',
+			'Cache-Control'          => 'private, no-store',
+			'X-Content-Type-Options' => 'nosniff',
+			'Location'               => $want,
+		] )
+		->and( $this->fetcher->calls )->toBe( [] )
+		->and( $this->logs )->toBe( [] );
+} )->with( [
+	'root'               => [ '/', 'https://www.example.com/' ],
+	'path and query'     => [ '/blog/hello/?p=1&q=a%20b', 'https://www.example.com/blog/hello/?p=1&q=a%20b' ],
+	'the auth path'      => [ '/__vector/auth?t=x', 'https://www.example.com/__vector/auth?t=x' ],
+	'a double slash'     => [ '//evil.example/x', 'https://www.example.com//evil.example/x' ],
+	'raw bytes'          => [ "/caf\xc3\xa9 x", 'https://www.example.com/caf%C3%A9%20x' ],
+	'absolute-form'      => [ 'http://evil.example/x', 'https://www.example.com/' ],
+	'empty'              => [ '', 'https://www.example.com/' ],
+] );
+
+it( 'redirects the preview hostname in any case, with a port, for any method', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+	$this->env['WP_HOME']             = 'HTTPS://WWW.Example.com/';
+
+	foreach ( [ 'MY-SITE.Sites.Example.Test', 'my-site.sites.example.test:443' ] as $host ) {
+		$result = ( $this->request )( '/a?b', [ 'HTTP_HOST' => $host, 'REQUEST_METHOD' => 'POST' ] );
+
+		expect( $result['response']['status'] )->toBe( 301 )
+			->and( gateHeaders( $result['response'] )['Location'] )->toBe( 'https://www.example.com/a?b' );
+	}
+} );
+
+it( 'redirects to https even when WP_HOME is http, and drops WP_HOME\'s path', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'example.com';
+	$this->env['WP_HOME']             = 'http://example.com/wordpress';
+
+	expect( gateHeaders( ( $this->request )( '/x' )['response'] )['Location'] )->toBe( 'https://example.com/x' );
+} );
+
+it( 'redirects even with a broken gate config', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+	unset( $this->env['VECTOR_GATE_COOKIE_SECRET'] );
+
+	expect( ( $this->request )( '/' )['response']['status'] )->toBe( 301 );
+} );
+
+it( 'still answers the build endpoint on the preview hostname after launch', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+
+	expectAllowed( ( $this->request )( '/__vector/build?vector_check=1' ) );
+	expectAllowed( ( $this->request )( '/__vector/build', [ 'REQUEST_METHOD' => 'HEAD' ] ) );
+	expect( ( $this->request )( '/__vector/build', [ 'REQUEST_METHOD' => 'POST' ] )['response']['status'] )->toBe( 301 );
+} );
+
+it( 'never redirects another host after launch', function ( string $host ): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+
+	expectPrivate( ( $this->request )( '/', [ 'HTTP_HOST' => $host ] ) );
+} )->with( [ 'my-site-abc123.ymirsite.com', 'x.my-site.sites.example.test' ] );
+
+it( 'never redirects a public host', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+
+	expect( ( $this->request )( '/', [ 'HTTP_HOST' => 'www.example.com' ] ) )->toBe( [ 'gated' => false, 'response' => null ] );
+} );
+
+it( 'never redirects before launch', function ( ?string $value ): void {
+	$this->env['WP_HOME'] = 'https://www.example.com';
+
+	if ( null !== $value ) {
+		$this->env['VECTOR_PUBLIC_HOSTS'] = $value;
+	}
+
+	expectPrivate( ( $this->request )( '/' ) );
+	expectAllowed( ( $this->withCookie )( 'user_epoch7' ) );
+} )->with( [ 'missing' => null, 'empty' => '' ] );
+
+it( 'gates the preview hostname instead of redirecting with an invalid public list', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com,';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+
+	expectPrivate( ( $this->request )( '/' ) );
+	expect( $this->logs )->toHaveCount( 1 );
+} );
+
+it( 'gates the preview hostname instead of redirecting when WP_HOME is unusable', function ( ?string $home ): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+
+	if ( null !== $home ) {
+		$this->env['WP_HOME'] = $home;
+	}
+
+	expectPrivate( ( $this->request )( '/' ) );
+	expectAllowed( ( $this->withCookie )( 'user_epoch7' ) );
+} )->with( [
+	'missing'              => null,
+	'empty'                => '',
+	'no scheme'            => 'www.example.com',
+	'another scheme'       => 'ftp://www.example.com',
+	'a port'               => 'https://www.example.com:8443',
+	'userinfo'             => 'https://u:p@www.example.com',
+	'an invalid host'      => 'https://bad_host.example',
+	'the preview hostname' => 'https://my-site.sites.example.test',
+	'garbage'              => 'http:///x',
+] );
+
+it( 'redirects only in the lambda runtime and only HTTP requests', function (): void {
+	$this->env['VECTOR_PUBLIC_HOSTS'] = 'www.example.com';
+	$this->env['WP_HOME']             = 'https://www.example.com';
+
+	expect( ( $this->request )( '/', [], 'cli' ) )->toBe( [ 'gated' => false, 'response' => null ] );
+
+	$emitted = [];
+	$gate    = new PreviewGate(
+		Runtime::DEV,
+		fn ( string $name ): string|false => $this->env[ $name ] ?? false,
+		emit: function ( int $status ) use ( &$emitted ): void {
+			$emitted[] = $status;
+		}
+	);
+	$_SERVER['HTTP_HOST'] = $this->host;
+	$gate->register();
+	unset( $_SERVER['HTTP_HOST'] );
+
+	expect( $emitted )->toBe( [] );
+} );
+
 it( 'exempts the build endpoint for GET and HEAD only', function (): void {
 	expectAllowed( ( $this->request )( '/__vector/build?vector_check=1' ) );
 	expectAllowed( ( $this->request )( '/__vector/build', [ 'REQUEST_METHOD' => 'HEAD' ] ) );

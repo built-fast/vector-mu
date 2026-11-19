@@ -52,7 +52,7 @@ set as WordPress expects; the variables below are vector-mu's part.
 | `VECTOR_GATE_DOCUMENT_TOKEN` | always (a Ymir secret), 32 random bytes, unpadded base64url | as above |
 | `VECTOR_GATE_COOKIE_SECRET` | always (a Ymir secret), 32 random bytes, standard base64 | as above |
 | `VECTOR_LOOPBACK_SECRET` | always (a Ymir secret), 32 random bytes, lowercase hex | as above, and no loopback header |
-| `VECTOR_PUBLIC_HOSTS` | at go-live, to the site's live custom domains, comma-separated | missing or empty: every host is gated; invalid: logged, and every host is gated |
+| `VECTOR_PUBLIC_HOSTS` | at go-live, to the site's live custom domains, comma-separated | missing or empty: every host is gated; invalid: logged, and every host is gated. Non-empty and valid: the preview hostname redirects to `WP_HOME`'s host |
 
 `VECTOR_SES_CONFIGURATION_SET` is read with `getenv` and is valid when it matches
 `^[A-Za-z0-9_-]{1,64}$` (SES's naming rules). It applies only where the bundled
@@ -119,6 +119,14 @@ It's on only in the `lambda` runtime, as vector-mu's first module.
 - `VECTOR_PREVIEW_HOST` is always gated, even if the list names it. A missing or
   empty list gates every host. A list with any invalid entry is logged (never its
   value) and gates every host.
+- Once the site has launched (`VECTOR_PUBLIC_HOSTS` is non-empty and valid), a
+  request on `VECTOR_PREVIEW_HOST`, any method, gets a `301` to `https://` plus
+  `WP_HOME`'s host, keeping the request's path and query, before the gate runs,
+  so the preview hostname is never gated after launch. `GET`/`HEAD
+  /__vector/build` is exempt, so Vector's check still reads the build there. If
+  `WP_HOME` is missing, isn't an `http`/`https` URL with a valid host and no port
+  or userinfo, or is on the preview hostname itself, there's no redirect and the
+  gate runs as before.
 - Tokens and cookies are bound to `VECTOR_PREVIEW_HOST`, so only there does the gate
   sign in or accept a cookie. Any other gated host gets the private page, with no
   redirect.

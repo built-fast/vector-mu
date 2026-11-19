@@ -31,7 +31,9 @@
 # - Preview gate: with 127.0.0.1 as the preview hostname and Vector Control
 #   unreachable (a cold container), a page is the 401 private page with
 #   noindex and no-store, a cookie can't get in, /__vector/build still answers
-#   (with noindex), and the loopback secret gets through to WordPress.
+#   (with noindex), and the loopback secret gets through to WordPress. With a
+#   public host and WP_HOME on it, the preview hostname redirects 301 there,
+#   keeping path and query, and /__vector/build still answers.
 # - Production mail: with VECTOR_RUNTIME unset and no
 #   VECTOR_SES_CONFIGURATION_SET, the fork's wp_mail() refuses the send before
 #   calling SES.
@@ -450,6 +452,15 @@ if grep -Eiq 'PHP (Warning|Fatal error|Parse error)' "$WORK_DIR/php-errors.log";
 else
 	pass "gate: no PHP warnings or fatals"
 fi
+stop_server
+
+# After launch: 127.0.0.1 is still the preview hostname, the site has a public
+# host, and WP_HOME is on it, so the preview hostname redirects there.
+GATE_ENV=("VECTOR_PREVIEW_HOST=127.0.0.1" "VECTOR_PUBLIC_HOSTS=www.example.test" "WP_HOME=https://www.example.test" "${GATE_SECRETS[@]}")
+start_server
+check_eq "launched: the preview hostname redirects" "$(build_request GET '/a/?b=1')" "301 "
+check_header "launched: to WP_HOME's host, keeping path and query" '^location: https://www\.example\.test/a/\?b=1$'
+check_eq "launched: the build endpoint still answers" "$(build_request GET /__vector/build)" "200 {\"build_id\":\"$BUILD_ID\"}"
 stop_server
 GATE_ENV=("VECTOR_PREVIEW_HOST=preview.example.test" "VECTOR_PUBLIC_HOSTS=127.0.0.1" "${GATE_SECRETS[@]}")
 
