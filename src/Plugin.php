@@ -14,14 +14,15 @@ use VectorMU\Modules\YmirConflictGuard;
 
 final class Plugin {
 
-	public const VERSION = '0.6.0';
+	public const VERSION = '0.7.0';
 
 	private static bool $booted = false;
 
 	/** @var list<class-string<ModuleInterface>> */
 	private const MODULES = [
-		// First, so the preview hostname is gated before any other module or
-		// site code runs. It exempts the build endpoint.
+		// First, so the preview hostname is gated (or, after launch,
+		// redirected to the live site) before any other module or site code
+		// runs. It exempts the build endpoint.
 		PreviewGate::class,
 		// Next, so it answers before any other module or site code runs.
 		BuildEndpoint::class,

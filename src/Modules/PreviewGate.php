@@ -42,6 +42,12 @@ use VectorMU\Runtime;
  * - Exempt: GET and HEAD /__vector/build (the deploy's check), anything
  *   that isn't an HTTP request (Ymir's console and cron run PHP's CLI), and
  *   requests with the site's X-Vector-Loopback secret.
+ * - Once the site has launched (VECTOR_PUBLIC_HOSTS is non-empty and
+ *   valid), a request on the preview hostname is redirected 301 to WP_HOME's
+ *   host, keeping its path and query, before anything else here runs, so
+ *   the preview hostname is never gated after launch. GET and HEAD
+ *   /__vector/build are exempt. A missing or unusable WP_HOME, or one on
+ *   the preview hostname itself, means no redirect: the gate runs.
  * - Every response on a gated host sends X-Robots-Tag: noindex, nofollow
  *   and Cache-Control: private, no-store, exempt or not.
  * - With a gate variable missing or invalid it refuses every non-exempt
@@ -63,6 +69,12 @@ final class PreviewGate implements ModuleInterface {
 
 	/** /__vector/auth's longest query: a token, a redirect, and their escaping. */
 	private const MAX_QUERY_LENGTH = 3 * ( Protocol::MAX_TOKEN_LENGTH + Protocol::MAX_REDIRECT_LENGTH );
+
+	/** WordPress's home URL; its host is where the preview hostname redirects after launch. */
+	public const HOME = 'WP_HOME';
+
+	/** The longest request URI the launch redirect keeps; a longer one redirects to "/". */
+	private const MAX_REDIRECT_URI_LENGTH = 8192;
 
 	/** How many gate cookies a request may offer; a browser sends one. */
 	private const MAX_COOKIES = 4;
@@ -175,12 +187,27 @@ HTML;
 			return $pass;
 		}
 
-		$method = self::serverString( $server, 'REQUEST_METHOD' ) ?? '';
-		$uri    = self::serverString( $server, 'REQUEST_URI' ) ?? '';
-		$host   = Protocol::requestHost( self::serverString( $server, 'HTTP_HOST' ) ?? '' );
-		$parts  = explode( '?', $uri, 2 );
-		$path   = $parts[0];
-		$query  = $parts[1] ?? '';
+		$method  = self::serverString( $server, 'REQUEST_METHOD' ) ?? '';
+		$uri     = self::serverString( $server, 'REQUEST_URI' ) ?? '';
+		$host    = Protocol::requestHost( self::serverString( $server, 'HTTP_HOST' ) ?? '' );
+		$parts   = explode( '?', $uri, 2 );
+		$path    = $parts[0];
+		$query   = $parts[1] ?? '';
+		$isBuild = BuildEndpoint::PATH === $path && ( 'GET' === $method || 'HEAD' === $method );
+
+		// After launch the preview hostname only redirects to the live site,
+		// before the gate, so it's never gated again.
+		if ( null !== $host && ! $isBuild ) {
+			$location = $this->launchRedirect( $host, $uri );
+
+			if ( null !== $location ) {
+				return [
+					'gated'    => false,
+					'response' => $this->response( 301, [ [ 'Location', $location ] ], '' ),
+				];
+			}
+		}
+
 		$config = Config::fromEnvironment( $this->env() );
 
 		if ( null !== $host && $this->isPublic( $host ) ) {
@@ -192,7 +219,7 @@ HTML;
 		// X-Forwarded-Host names.
 		$pass['gated'] = true;
 
-		if ( BuildEndpoint::PATH === $path && ( 'GET' === $method || 'HEAD' === $method ) ) {
+		if ( $isBuild ) {
 			return $pass;
 		}
 
@@ -236,6 +263,80 @@ HTML;
 				default                                    => $this->privateResponse( $method, $this->link( $config, $store ) ),
 			},
 		];
+	}
+
+	/**
+	 * Where a request on $host for $uri redirects once the site has
+	 * launched: https://<WP_HOME's host><uri> when $host is the preview
+	 * hostname and VECTOR_PUBLIC_HOSTS is non-empty and valid. Null (no
+	 * redirect, so the gate runs) otherwise, including when WP_HOME is
+	 * missing, unusable, or on the preview hostname itself. An invalid
+	 * public list isn't logged here; isPublic() logs it.
+	 */
+	private function launchRedirect( string $host, string $uri ): ?string {
+		$env     = $this->env();
+		$preview = $env( Config::PREVIEW_HOST );
+
+		if ( ! is_string( $preview ) || ! Protocol::validHost( $preview ) || $preview !== $host ) {
+			return null;
+		}
+
+		$public = Config::publicHosts( $env );
+
+		if ( null === $public || [] === $public ) {
+			return null;
+		}
+
+		$home = self::homeHost( $env( self::HOME ) );
+
+		if ( null === $home || $home === $preview ) {
+			return null;
+		}
+
+		return 'https://' . $home . self::redirectUri( $uri );
+	}
+
+	/**
+	 * The host of WP_HOME when it's an http(s) URL with a valid DNS name
+	 * and no port or userinfo, lowercased; null otherwise.
+	 */
+	private static function homeHost( string|false $home ): ?string {
+		if ( ! is_string( $home ) || '' === $home ) {
+			return null;
+		}
+
+		// Not wp_parse_url(): the gate depends on no WordPress function.
+		$parts = parse_url( $home ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
+
+		if ( ! is_array( $parts ) || ! isset( $parts['scheme'], $parts['host'] ) || isset( $parts['port'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return null;
+		}
+
+		$scheme = strtolower( $parts['scheme'] );
+		$host   = strtolower( $parts['host'] );
+
+		return ( 'https' === $scheme || 'http' === $scheme ) && Protocol::validHost( $host ) ? $host : null;
+	}
+
+	/**
+	 * The request URI the launch redirect keeps: its path and query when
+	 * it's origin-form ("/..."), "/" otherwise or when it's too long. Bytes
+	 * outside printable ASCII are percent-encoded so the Location header
+	 * stays printable ASCII.
+	 */
+	private static function redirectUri( string $uri ): string {
+		if ( '' === $uri || '/' !== $uri[0] || strlen( $uri ) > self::MAX_REDIRECT_URI_LENGTH ) {
+			return '/';
+		}
+
+		// A fragment never reaches the server; drop one anyway.
+		$uri = explode( '#', $uri, 2 )[0];
+
+		return (string) preg_replace_callback(
+			'/[^\x21-\x7E]/',
+			static fn ( array $m ): string => rawurlencode( $m[0] ),
+			$uri
+		);
 	}
 
 	/**
