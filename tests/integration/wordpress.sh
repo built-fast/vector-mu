@@ -421,7 +421,7 @@ printf "<?php return ['build_id' => '%s'];" "$BUILD_ID" >"$WP_DIR/vector-build.p
 # an outage.
 GATE_ENV=("VECTOR_PREVIEW_HOST=127.0.0.1" "${GATE_SECRETS[@]}")
 start_server
-check_eq "gate: a page is refused" "$(build_request GET / | cut -c1-4)" "401 "
+check_eq "gate: a page is refused" "$(build_request GET / | head -c 4)" "401 "
 check_header "gate: the private page is noindex" '^x-robots-tag: noindex, nofollow$'
 check_header "gate: the private page is private, no-store" '^cache-control: private, no-store$'
 if grep -q 'This preview site is private' "$WORK_DIR/build.body"; then
